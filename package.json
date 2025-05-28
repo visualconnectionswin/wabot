@@ -13,12 +13,14 @@
     "websocket",
     "sender"
   ],
-  "author": "Tu Nombre o Alias",
+  "author": "newt0m",
   "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.5",
     "express": "^4.19.2",
-    "ws": "^8.17.1"
+    "ws": "^8.17.1",
+    "@hapi/boom": "^10.0.1",
+    "pino": "^8.21.0"
   },
   "engines": {
     "node": ">=18.0.0"
