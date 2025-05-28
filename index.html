@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Sender Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .steps-container {
+            display: flex;
+            min-height: 70vh;
+        }
+
+        .steps-nav {
+            width: 300px;
+            background: #f8f9fa;
+            padding: 30px 0;
+            border-right: 1px solid #e9ecef;
+        }
+
+        .step-item {
+            padding: 20px 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .step-item:hover {
+            background: #e9ecef;
+        }
+
+        .step-item.active {
+            background: #fff;
+            border-left-color: #25D366;
+            font-weight: 600;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #6c757d;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .step-item.active .step-number {
+            background: #25D366;
+        }
+
+        .step-item.completed .step-number {
+            background: #28a745;
+        }
+
+        .step-content {
+            flex: 1;
+            padding: 40px;
+        }
+
+        .step-panel {
+            display: none;
+        }
+
+        .step-panel.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .upload-area {
+            border: 3px dashed #25D366;
+            border-radius: 15px;
+            padding: 60px 20px;
+            text-align: center;
+            background: #f8f9fa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background: #e9f7ef;
+            border-color: #128C7E;
+        }
+
+        .upload-area.dragover {
+            background: #d4edda;
+            border-color: #155724;
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #25D366;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn:hover {
+            background: #128C7E;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.btn-danger {
+            background: #dc3545;
+        }
+
+        .btn.btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn.btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn.btn-warning:hover {
+            background: #e0a800;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #25D366;
+        }
+
+        textarea.form-control {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .progress-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #25D366, #128C7E);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #25D366;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+
+        .qr-container {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+
+        .qr-code {
+            margin: 20px 0;
+            display: inline-block;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            min-height: 200px; /* Para que no colapse al inicio */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-disconnected { background: #dc3545; }
+        .status-connecting { background: #ffc107; }
+        .status-connected { background: #28a745; }
+
+        .contact-preview {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+
+        .contact-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .contact-item:last-child {
+            border-bottom: none;
+        }
+
+        .contact-name {
+            font-weight: 600;
+        }
+
+        .contact-number {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .log-container {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #212529;
+            color: #28a745; /* Verde para el texto */
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            margin: 20px 0;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            opacity: 0;
+            animation: logFade 0.3s ease forwards;
+        }
+        .log-entry.error { color: #dc3545; } /* Rojo para errores */
+        .log-entry.warning { color: #ffc107; } /* Amarillo para advertencias */
+        .log-entry.info { color: #17a2b8; } /* Azul para info */
+
+
+        @keyframes logFade {
+            to { opacity: 1; }
+        }
+
+        .time-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .steps-container {
+                flex-direction: column;
+            }
+            
+            .steps-nav {
+                width: 100%;
+                display: flex;
+                overflow-x: auto;
+                padding: 20px 0;
+            }
+            
+            .step-item {
+                min-width: 200px;
+                text-align: center;
+                border-left: none;
+                border-bottom: 4px solid transparent;
+            }
+            
+            .step-item.active {
+                border-left: none;
+                border-bottom-color: #25D366;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WhatsApp Sender Pro</h1>
+            <p>Sistema profesional de envío masivo de mensajes</p>
+        </div>
+
+        <div class="steps-container">
+            <div class="steps-nav">
+                <div class="step-item active" data-step="1">
+                    <div class="step-number">1</div>
+                    <div>
+                        <div>Cargar Archivo</div>
+                        <small>Importar contactos</small>
+                    </div>
+                </div>
+                <div class="step-item" data-step="2">
+                    <div class="step-number">2</div>
+                    <div>
+                        <div>Configurar Mensaje</div>
+                        <small>Personalizar envío</small>
+                    </div>
+                </div>
+                <div class="step-item" data-step="3">
+                    <div class="step-number">3</div>
+                    <div>
+                        <div>Conectar WhatsApp</div>
+                        <small>Escanear QR</small>
+                    </div>
+                </div>
+                <div class="step-item" data-step="4">
+                    <div class="step-number">4</div>
+                    <div>
+                        <div>Envío Masivo</div>
+                        <small>Monitoreo en tiempo real</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-content">
+                <!-- Paso 1: Cargar Archivo -->
+                <div class="step-panel active" id="step-1">
+                    <h2>Paso 1: Cargar Archivo de Contactos</h2>
+                    <p>Arrastra tu archivo Excel (.xlsx) o haz clic para seleccionarlo.
+                       <br><small>El archivo debe tener el nombre en la columna B, y los números en las columnas D, E, F.</small>
+                    </p>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <h3>Arrastra tu archivo aquí</h3>
+                        <p>o haz clic para seleccionar</p>
+                        <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls">
+                        <button class="btn" onclick="document.getElementById('fileInput').click()">
+                            Seleccionar Archivo
+                        </button>
+                    </div>
+
+                    <div id="fileInfo" style="display: none;">
+                        <div class="alert alert-success">
+                            <strong>Archivo cargado exitosamente:</strong>
+                            <div id="fileName"></div>
+                            <div id="fileStats"></div>
+                        </div>
+                        
+                        <div class="contact-preview" id="contactPreview"></div>
+                        
+                        <button class="btn" onclick="nextStep(2)">
+                            Continuar al Paso 2 →
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Paso 2: Configurar Mensaje -->
+                <div class="step-panel" id="step-2">
+                    <h2>Paso 2: Configurar Mensaje y Timing</h2>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Mensaje a enviar:</label>
+                        <textarea class="form-control" id="messageText" placeholder="Hola {nombre}, este es un mensaje personalizado...
+
+Variables disponibles:
+{nombre} - Nombre del contacto (primer nombre)
+{numero} - Número de teléfono (con prefijo +51)
+
+Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
+                    </div>
+
+                    <div class="time-controls">
+                        <div class="form-group">
+                            <label class="form-label">Intervalo entre mensajes (segundos):</label>
+                            <input type="number" class="form-control" id="messageInterval" value="5" min="1" max="60">
+                            <small>Recomendado: 3-10 segundos para evitar bloqueos</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Pausa tras lote de (mensajes):</label>
+                            <input type="number" class="form-control" id="batchSize" value="20" min="1" max="200">
+                            <small>Pausa de 30s cada X mensajes (gestionado por backend)</small>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Vista previa del mensaje:</label>
+                        <div id="messagePreview" class="form-control" style="background: #f8f9fa; min-height: 80px;"></div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="btn" onclick="prevStep(1)">← Anterior</button>
+                        <button class="btn" onclick="nextStep(3)">Continuar al QR →</button>
+                    </div>
+                </div>
+
+                <!-- Paso 3: Conectar WhatsApp -->
+                <div class="step-panel" id="step-3">
+                    <h2>Paso 3: Conectar WhatsApp</h2>
+                    
+                    <div class="qr-container">
+                        <h3>
+                            <span class="status-indicator status-disconnected" id="statusIndicator"></span>
+                            <span id="connectionStatus">Desconectado del Backend</span>
+                        </h3>
+                        
+                        <div id="qrCode" class="qr-code">
+                            <div style="padding: 40px; color: #6c757d;">
+                                <div style="font-size: 3rem;">📱</div>
+                                <p>Haz clic en "Generar QR" para conectar con WhatsApp Web</p>
+                            </div>
+                        </div>
+                        
+                        <button class="btn" id="generateQRBtn" onclick="requestQRCodeGeneration()">
+                            Generar Código QR
+                        </button>
+                        
+                        <div style="margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
+                            <h4>Instrucciones:</h4>
+                            <ol>
+                                <li>Abre WhatsApp en tu teléfono</li>
+                                <li>Ve a Configuración > Dispositivos vinculados</li>
+                                <li>Toca "Vincular un dispositivo"</li>
+                                <li>Escanea el código QR que aparecerá arriba</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="btn" onclick="prevStep(2)">← Anterior</button>
+                        <button class="btn" id="goToSendingBtn" onclick="nextStep(4)" disabled>
+                            Ir a Envío Masivo →
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Paso 4: Envío Masivo -->
+                <div class="step-panel" id="step-4">
+                    <h2>Paso 4: Envío Masivo en Progreso</h2>
+                    
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        
+                        <div class="progress-stats">
+                            <div class="stat-item">
+                                <div class="stat-number" id="sentCount">0</div>
+                                <div class="stat-label">Enviados</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="failedCount">0</div>
+                                <div class="stat-label">Fallidos</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="remainingCount">0</div>
+                                <div class="stat-label">Restantes</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="estimatedTime">--</div>
+                                <div class="stat-label">Tiempo estimado</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="btn" id="startBtn" onclick="requestStartSending()">
+                            ▶️ Iniciar Envío
+                        </button>
+                        <button class="btn btn-warning" id="pauseBtn" onclick="requestPauseSending()" disabled>
+                            ⏸️ Pausar
+                        </button>
+                        <button class="btn btn-danger" id="stopBtn" onclick="requestStopSending()" disabled>
+                            ⏹️ Detener
+                        </button>
+                    </div>
+
+                    <div class="log-container" id="logContainer">
+                        <div class="log-entry">Sistema iniciado - Esperando comandos...</div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="btn" onclick="resetProcess()">
+                            🔄 Nuevo Proceso
+                        </button>
+                        <button class="btn" onclick="exportReport()">
+                            📊 Exportar Reporte (XLSX)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Variables globales
+        let contacts = []; // Almacenará { name, number, originalRow, status (enviado/fallido/pendiente), error? }
+        let currentStep = 1;
+        let isWhatsAppConnected = false; // Estado de conexión de Baileys
+        let isSendingActive = false; // Si el proceso de envío está activo (backend)
+        let isSendingPaused = false; // Si el proceso de envío está pausado (backend)
+        
+        let currentProcessingIndex = 0; // Para UI, cuántos han sido procesados (intentados)
+        let sentSuccessfullyCount = 0;
+        let failedToSendCount = 0;
+        
+        let socket; // WebSocket connection
+
+        // --- WebSocket Communication ---
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`; // Assumes backend on same host/port
+            
+            addLog('🔌 Intentando conectar al backend vía WebSocket...', 'info');
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                addLog('🔌 Conectado al backend exitosamente.', 'info');
+                document.getElementById('connectionStatus').textContent = 'Conectado al Backend';
+                // Podrías enviar un mensaje inicial si es necesario, o pedir estado actual de Baileys
+                // socket.send(JSON.stringify({ type: 'get_initial_status' }));
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error, event.data);
+                    addLog('Error procesando mensaje del backend.', 'error');
+                }
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                addLog('Error de conexión WebSocket con el backend. Ver consola.', 'error');
+                document.getElementById('connectionStatus').textContent = 'Error conexión Backend';
+                document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
+            };
+
+            socket.onclose = () => {
+                addLog('🔌 Desconectado del backend. Intentando reconectar en 5s...', 'warning');
+                document.getElementById('connectionStatus').textContent = 'Desconectado del Backend';
+                document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
+                isWhatsAppConnected = false;
+                updateUIAfterQRStatus();
+                setTimeout(connectWebSocket, 5000); // Reintentar conexión
+            };
+        }
+
+        function sendToBackend(type, payload = {}) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type, payload }));
+            } else {
+                addLog('⚠️ No se pudo enviar comando: WebSocket no conectado.', 'warning');
+                alert('Error: No hay conexión con el servidor. Por favor, recarga la página.');
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            const { type, payload } = data;
+            addLog(`📬 Backend dice: ${type} ${payload ? JSON.stringify(payload).substring(0,100)+'...' : ''}`);
+
+            const qrContainer = document.getElementById('qrCode');
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('connectionStatus');
+            const generateQRBtn = document.getElementById('generateQRBtn');
+            const goToSendingBtn = document.getElementById('goToSendingBtn');
+
+            switch (type) {
+                case 'qr_code':
+                    addLog(' otrzymano QR, renderowanie...');
+                    if (payload && payload.qr) {
+                        const qr = qrcode(0, 'M');
+                        qr.addData(payload.qr);
+                        qr.make();
+                        qrContainer.innerHTML = `<img src="${qr.createDataURL(8)}" alt="QR Code" style="max-width: 250px;">`;
+                        statusText.textContent = 'Escanea el código QR';
+                        statusIndicator.className = 'status-indicator status-connecting';
+                        generateQRBtn.textContent = 'Volver a generar QR';
+                        generateQRBtn.disabled = false;
+                    } else {
+                         qrContainer.innerHTML = `<p style="color: red;">Error: QR no recibido del backend.</p>`;
+                    }
+                    break;
+
+                case 'connection_update': // Estado de conexión de WhatsApp (Baileys)
+                    isWhatsAppConnected = payload.status === 'open';
+                    if (payload.status === 'open') {
+                        statusIndicator.className = 'status-indicator status-connected';
+                        statusText.textContent = 'WhatsApp Conectado';
+                        qrContainer.innerHTML = `
+                            <div style="padding: 40px; color: #28a745;">
+                                <div style="font-size: 3rem;">✅</div>
+                                <p><strong>¡WhatsApp Conectado!</strong></p>
+                            </div>`;
+                        generateQRBtn.textContent = 'Reconectar WhatsApp';
+                        markStepCompleted(3);
+                    } else if (payload.status === 'connecting') {
+                        statusIndicator.className = 'status-indicator status-connecting';
+                        statusText.textContent = 'Conectando WhatsApp...';
+                    } else { // closed or error
+                        statusIndicator.className = 'status-indicator status-disconnected';
+                        statusText.textContent = `WhatsApp Desconectado: ${payload.message || 'Razón desconocida'}`;
+                         qrContainer.innerHTML = `
+                            <div style="padding: 40px; color: #dc3545;">
+                                <div style="font-size: 3rem;">⚠️</div>
+                                <p><strong>WhatsApp Desconectado</strong></p>
+                                <p>${payload.message || 'Intenta generar el QR de nuevo.'}</p>
+                            </div>`;
+                        generateQRBtn.textContent = 'Generar Código QR';
+                    }
+                    generateQRBtn.disabled = false;
+                    updateUIAfterQRStatus();
+                    break;
+
+                case 'sending_started':
+                    isSendingActive = true;
+                    isSendingPaused = false;
+                    addLog('🚀 Envío iniciado por el backend.');
+                    updateSendingUI();
+                    break;
+
+                case 'message_status':
+                    // payload: { contact: { name, number, originalRow }, status: 'sent'/'failed', error: 'optional error message' }
+                    currentProcessingIndex++;
+                    const contactIndex = contacts.findIndex(c => c.number === payload.contact.number && c.name === payload.contact.name && c.originalRow === payload.contact.originalRow);
+
+                    if (payload.status === 'sent') {
+                        sentSuccessfullyCount++;
+                        addLog(`✅ Enviado a ${payload.contact.name} (${payload.contact.number})`);
+                        if(contactIndex !== -1) contacts[contactIndex].status = 'Enviado';
+                    } else {
+                        failedToSendCount++;
+                        addLog(`❌ Falló envío a ${payload.contact.name} (${payload.contact.number}): ${payload.error || 'Error desconocido'}`, 'error');
+                        if(contactIndex !== -1) {
+                            contacts[contactIndex].status = 'Fallido';
+                            contacts[contactIndex].error = payload.error || 'Error desconocido';
+                        }
+                    }
+                    updateStats();
+                    break;
+                
+                case 'batch_pause_notification':
+                     addLog(`⏸️ Pausa automática por lote (gestionado por backend). Reanudará pronto.`, 'info');
+                     // UI no necesita cambiar mucho, backend gestiona esto.
+                     break;
+
+                case 'sending_paused':
+                    isSendingPaused = true;
+                    addLog('⏸️ Envío pausado por el backend.');
+                    updateSendingUI();
+                    break;
+                
+                case 'sending_resumed':
+                    isSendingPaused = false;
+                    addLog('▶️ Envío reanudado por el backend.');
+                    updateSendingUI();
+                    break;
+
+                case 'sending_stopped':
+                case 'sending_finished':
+                    isSendingActive = false;
+                    isSendingPaused = false;
+                    if (type === 'sending_finished') addLog('🎉 ¡Envío masivo completado por el backend!');
+                    else addLog('🛑 Envío detenido por el backend.');
+                    addLog(`📊 Resumen final: ${sentSuccessfullyCount} enviados, ${failedToSendCount} fallidos.`);
+                    updateSendingUI();
+                    updateStats(); // Asegurar que las stats finales se muestran
+                    if (Notification.permission === 'granted') {
+                        new Notification('WhatsApp Sender Pro', {
+                            body: `Envío finalizado: ${sentSuccessfullyCount} mensajes enviados.`,
+                            icon: '📱' // Puedes poner una URL a un icono si quieres
+                        });
+                    }
+                    break;
+                
+                case 'error_message': // Mensajes de error generales del backend
+                    addLog(`Backend Error: ${payload.message}`, 'error');
+                    alert(`Error del Servidor: ${payload.message}`);
+                    break;
+
+                default:
+                    addLog(`Mensaje desconocido del backend: ${type}`, 'warning');
+            }
+        }
+
+        // --- Inicialización y UI ---
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+            connectWebSocket(); // Conectar al backend al cargar la página
+        });
+
+        function initializeApp() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+            uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('dragover'); });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+            });
+            fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFile(e.target.files[0]); });
+
+            document.getElementById('messageText').addEventListener('input', updateMessagePreview);
+            document.querySelectorAll('.step-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const step = parseInt(item.dataset.step);
+                    if (step < currentStep || item.classList.contains('completed')) { // Allow going back or to completed
+                         goToStep(step);
+                    } else if (step === currentStep + 1 && validateCurrentStep()) { // Allow going to next if current is valid
+                        goToStep(step);
+                    }
+                });
+            });
+            updateMessagePreview();
+            updateStats(); // Inicializar las estadísticas
+        }
+
+        function handleFile(file) {
+            if (!file.name.match(/\.(xlsx|xls)$/)) {
+                alert('Por favor selecciona un archivo Excel (.xlsx o .xls)');
+                addLog('Error: Tipo de archivo no válido: ' + file.name, 'error');
+                return;
+            }
+
+            addLog('Procesando archivo: ' + file.name);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: false, defval: ""}); // raw:false para obtener strings
+
+                    processContacts(jsonData, file.name);
+                } catch (error) {
+                    alert('Error al leer el archivo Excel: ' + error.message);
+                    addLog('Error leyendo Excel: ' + error.message, 'error');
+                    console.error(error);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processContacts(data, fileName) {
+            contacts = [];
+            let validContactsCount = 0;
+            let invalidRowsCount = 0;
+
+            // Saltar la primera fila (encabezados)
+            for (let i = 1; i < data.length; i++) {
+                const row = data[i];
+                if (!row || row.length < 6) { // Asegurar que hay suficientes columnas
+                    invalidRowsCount++;
+                    continue;
+                }
+
+                // Nombre: Columna B (índice 1). Tomar solo el primer nombre.
+                const fullName = row[1] ? String(row[1]).trim() : '';
+                const firstName = fullName.split(' ')[0];
+
+                // Números: Columnas D, E, F (índices 3, 4, 5)
+                const numbersInRow = [];
+                for (let colIdx of [3, 4, 5]) {
+                    if (row[colIdx]) {
+                        const rawNumber = String(row[colIdx]).trim();
+                        if (isValidPeruvianNumber(rawNumber)) {
+                            numbersInRow.push(formatPeruvianNumber(rawNumber));
+                        }
+                    }
+                }
+
+                if (firstName && numbersInRow.length > 0) {
+                    numbersInRow.forEach(number => {
+                        contacts.push({
+                            name: firstName,
+                            number: number,
+                            originalRow: i + 1, // Fila original en Excel (1-indexed)
+                            status: 'Pendiente', // Estado inicial
+                            error: null
+                        });
+                        validContactsCount++;
+                    });
+                } else {
+                    invalidRowsCount++;
+                }
+            }
+
+            document.getElementById('fileName').textContent = fileName;
+            document.getElementById('fileStats').innerHTML = `
+                <div style="margin-top: 10px;">
+                    <strong>Contactos válidos (nombre+número):</strong> ${validContactsCount}<br>
+                    <strong>Filas inválidas/sin datos suficientes:</strong> ${invalidRowsCount}<br>
+                    <strong>Total filas de datos procesadas:</strong> ${data.length - 1}
+                </div>
+            `;
+            
+            displayContactPreview();
+            document.getElementById('fileInfo').style.display = 'block';
+            markStepCompleted(1);
+            addLog(`Archivo "${fileName}" procesado: ${validContactsCount} contactos válidos encontrados.`);
+            updateStats(); // Actualizar contadores restantes, etc.
+        }
+
+        function isValidPeruvianNumber(numberStr) {
+            const cleanNumber = numberStr.replace(/\D/g, ''); // Quitar no dígitos
+            return cleanNumber.length === 9 && cleanNumber.startsWith('9');
+        }
+
+        function formatPeruvianNumber(numberStr) {
+            const cleanNumber = numberStr.replace(/\D/g, '');
+            return '51' + cleanNumber; // Se añade el + luego al enviar a Baileys si es necesario, o Baileys lo maneja.
+                                       // Baileys usualmente espera el número sin el '+', solo digitos.
+                                       // Si tu backend espera 519xxxxxxxx, está bien. Si espera +519xxxxxxxx, ajústalo aquí o en el backend.
+        }
+
+        function displayContactPreview() {
+            const previewEl = document.getElementById('contactPreview');
+            const maxShow = 10;
+            let html = `<h4>Vista previa de contactos (mostrando ${Math.min(maxShow, contacts.length)} de ${contacts.length}):</h4>`;
+            
+            for (let i = 0; i < Math.min(maxShow, contacts.length); i++) {
+                const contact = contacts[i];
+                html += `
+                    <div class="contact-item">
+                        <div>
+                            <div class="contact-name">${contact.name}</div>
+                            <div class="contact-number">+${contact.number}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            if (contacts.length > maxShow) {
+                html += `<div style="text-align: center; margin-top: 10px; color: #6c757d;">... y ${contacts.length - maxShow} contactos más</div>`;
+            }
+            previewEl.innerHTML = contacts.length > 0 ? html : "<p>No se encontraron contactos válidos para previsualizar.</p>";
+        }
+
+        function updateMessagePreview() {
+            const messageText = document.getElementById('messageText').value;
+            const previewEl = document.getElementById('messagePreview');
+            
+            if (contacts.length > 0) {
+                const sampleContact = contacts[0];
+                const previewMessage = messageText
+                    .replace(/{nombre}/g, sampleContact.name)
+                    .replace(/{numero}/g, `+${sampleContact.number}`); // Mostrar con + para el usuario
+                previewEl.innerHTML = `<strong>Ejemplo con "${sampleContact.name}":</strong><br>${previewMessage.replace(/\n/g, '<br>') || 'Escribe tu mensaje...'}`;
+            } else {
+                previewEl.innerHTML = messageText.replace(/\n/g, '<br>') || 'Escribe tu mensaje... (carga contactos para ver un ejemplo real)';
+            }
+        }
+        
+        function updateUIAfterQRStatus() {
+            document.getElementById('goToSendingBtn').disabled = !isWhatsAppConnected;
+        }
+
+        // --- QR Code Logic ---
+        function requestQRCodeGeneration() {
+            addLog('Solicitando QR al backend...', 'info');
+            document.getElementById('generateQRBtn').disabled = true;
+            document.getElementById('generateQRBtn').textContent = 'Generando...';
+            document.getElementById('qrCode').innerHTML = '<p>Esperando QR del backend...</p>';
+            document.getElementById('statusIndicator').className = 'status-indicator status-connecting';
+            document.getElementById('connectionStatus').textContent = 'Solicitando QR...';
+            sendToBackend('generate_qr_request');
+        }
+
+        // --- Sending Logic ---
+        function requestStartSending() {
+            if (!isWhatsAppConnected) {
+                alert('WhatsApp no está conectado. Por favor, ve al Paso 3 y conecta.');
+                addLog('Intento de envío fallido: WhatsApp no conectado.', 'error');
+                return;
+            }
+            if (contacts.length === 0) {
+                alert('No hay contactos cargados para enviar.');
+                addLog('Intento de envío fallido: No hay contactos.', 'error');
+                return;
+            }
+            const messageText = document.getElementById('messageText').value.trim();
+            if (!messageText) {
+                alert('El mensaje no puede estar vacío.');
+                addLog('Intento de envío fallido: Mensaje vacío.', 'error');
+                return;
+            }
+
+            addLog('Solicitando inicio de envío al backend...', 'info');
+            // Resetear contadores para este envío
+            currentProcessingIndex = 0;
+            sentSuccessfullyCount = 0;
+            failedToSendCount = 0;
+            contacts.forEach(c => { // Reset status for re-sending
+                c.status = 'Pendiente';
+                c.error = null;
+            });
+            updateStats();
+
+
+            const payload = {
+                contacts: contacts, // Enviar toda la lista, el backend la gestionará
+                messageTemplate: messageText,
+                intervalSeconds: parseInt(document.getElementById('messageInterval').value),
+                batchSize: parseInt(document.getElementById('batchSize').value)
+            };
+            sendToBackend('start_sending_request', payload);
+        }
+
+        function requestPauseSending() {
+            if (!isSendingActive) return;
+            
+            if (isSendingPaused) { // Si está pausado, se quiere reanudar
+                addLog('Solicitando reanudar envío al backend...', 'info');
+                sendToBackend('resume_sending_request');
+            } else { // Si está enviando, se quiere pausar
+                addLog('Solicitando pausar envío al backend...', 'info');
+                sendToBackend('pause_sending_request');
+            }
+        }
+
+        function requestStopSending() {
+            if (!isSendingActive) return;
+            if (confirm('¿Estás seguro de que quieres detener el envío actual?')) {
+                addLog('Solicitando detener envío al backend...', 'info');
+                sendToBackend('stop_sending_request');
+            }
+        }
+        
+        function updateSendingUI() {
+            const startBtn = document.getElementById('startBtn');
+            const pauseBtn = document.getElementById('pauseBtn');
+            const stopBtn = document.getElementById('stopBtn');
+
+            startBtn.disabled = isSendingActive;
+            pauseBtn.disabled = !isSendingActive;
+            stopBtn.disabled = !isSendingActive;
+
+            if (isSendingActive) {
+                startBtn.innerHTML = '⏳ Enviando...';
+                if (isSendingPaused) {
+                    pauseBtn.innerHTML = '▶️ Reanudar';
+                    pauseBtn.classList.remove('btn-warning');
+                } else {
+                    pauseBtn.innerHTML = '⏸️ Pausar';
+                    pauseBtn.classList.add('btn-warning');
+                }
+            } else {
+                startBtn.innerHTML = '▶️ Iniciar Envío';
+                pauseBtn.innerHTML = '⏸️ Pausar';
+                pauseBtn.classList.add('btn-warning');
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('sentCount').textContent = sentSuccessfullyCount;
+            document.getElementById('failedCount').textContent = failedToSendCount;
+            const remaining = contacts.length - currentProcessingIndex;
+            document.getElementById('remainingCount').textContent = Math.max(0, remaining);
+            
+            const progress = contacts.length > 0 ? (currentProcessingIndex / contacts.length) * 100 : 0;
+            document.getElementById('progressFill').style.width = progress + '%';
+            
+            if (currentProcessingIndex > 0 && isSendingActive && !isSendingPaused && remaining > 0) {
+                const interval = parseInt(document.getElementById('messageInterval').value) || 5; // fallback
+                const batchSize = parseInt(document.getElementById('batchSize').value) || 20; // fallback
+                const batchesRemaining = Math.ceil(remaining / batchSize);
+                const pauseTimePerBatch = batchesRemaining > 0 ? (batchesRemaining -1) * 30 : 0; // 30s de pausa por lote
+
+                const estimatedSeconds = (remaining * interval) + pauseTimePerBatch;
+                const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+                document.getElementById('estimatedTime').textContent = estimatedMinutes + ' min';
+            } else if (!isSendingActive && currentProcessingIndex > 0) {
+                 document.getElementById('estimatedTime').textContent = 'Finalizado';
+            }
+            else {
+                document.getElementById('estimatedTime').textContent = '--';
+            }
+        }
+
+        function addLog(message, type = 'default') { // type: default, error, warning, info
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            if (type !== 'default') {
+                logEntry.classList.add(type);
+            }
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+            
+            if (logContainer.children.length > 200) { // Limitar logs
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        function resetProcess() {
+            if (isSendingActive && !confirm('Hay un envío en progreso. ¿Estás seguro de que quieres reiniciar todo el proceso? Esto detendrá el envío actual.')) {
+                return;
+            }
+            
+            addLog('🔄 Reiniciando proceso completo...', 'info');
+            sendToBackend('reset_baileys_request'); // Pedir al backend que resetee su instancia Baileys
+
+            contacts = [];
+            isWhatsAppConnected = false;
+            isSendingActive = false;
+            isSendingPaused = false;
+            currentProcessingIndex = 0;
+            sentSuccessfullyCount = 0;
+            failedToSendCount = 0;
+            
+            document.getElementById('fileInput').value = ''; // Limpiar input de archivo
+            document.getElementById('fileInfo').style.display = 'none';
+            document.getElementById('contactPreview').innerHTML = '';
+            document.getElementById('messageText').value = '';
+            updateMessagePreview();
+            
+            document.getElementById('qrCode').innerHTML = `
+                <div style="padding: 40px; color: #6c757d;">
+                    <div style="font-size: 3rem;">📱</div>
+                    <p>Haz clic en "Generar QR" para conectar</p>
+                </div>`;
+            document.getElementById('connectionStatus').textContent = 'Desconectado del Backend (esperando reconexión)'; // Se actualizará en onopen
+            document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
+            const generateQRBtn = document.getElementById('generateQRBtn');
+            generateQRBtn.textContent = 'Generar Código QR';
+            generateQRBtn.disabled = false; // Habilitar por si el socket no está listo de inmediato
+            
+            updateUIAfterQRStatus();
+            updateSendingUI();
+            updateStats();
+            
+            document.getElementById('logContainer').innerHTML = '<div class="log-entry">Sistema reiniciado - Esperando comandos...</div>';
+            
+            document.querySelectorAll('.step-item').forEach(item => item.classList.remove('completed'));
+            goToStep(1); // Volver al primer paso
+        }
+
+        function exportReport() {
+            if (contacts.length === 0) {
+                alert("No hay datos de contactos para exportar.");
+                addLog('Intento de exportación fallido: No hay contactos.', 'warning');
+                return;
+            }
+
+            addLog('📊 Preparando reporte XLSX...', 'info');
+
+            const reportDetails = contacts.map(contact => ({
+                'Nombre Contacto': contact.name,
+                'Número Enviado': `+${contact.number}`, // Mostrar con +
+                'Fila Original Excel': contact.originalRow,
+                'Estado Envío': contact.status || 'Pendiente',
+                'Error (si falló)': contact.error || ''
+            }));
+
+            const wsDetails = XLSX.utils.json_to_sheet(reportDetails);
+            // Ajustar ancho de columnas (opcional, pero mejora la legibilidad)
+            wsDetails['!cols'] = [
+                { wch: 20 }, // Nombre Contacto
+                { wch: 15 }, // Número Enviado
+                { wch: 10 }, // Fila Original Excel
+                { wch: 15 }, // Estado Envío
+                { wch: 30 }  // Error
+            ];
+
+            const summaryData = [
+                { "Métrica": "Total Contactos Cargados (nombre+número)", "Valor": contacts.length },
+                { "Métrica": "Total Mensajes Procesados (intentados)", "Valor": currentProcessingIndex },
+                { "Métrica": "Mensajes Enviados Exitosamente", "Valor": sentSuccessfullyCount },
+                { "Métrica": "Mensajes Fallidos", "Valor": failedToSendCount },
+                { "Métrica": "Mensajes Pendientes de Procesar", "Valor": Math.max(0, contacts.length - currentProcessingIndex) },
+                { "Métrica": "Tasa de Éxito (sobre procesados)", "Valor": currentProcessingIndex > 0 ? `${((sentSuccessfullyCount / currentProcessingIndex) * 100).toFixed(2)}%` : "N/A" },
+                { "Métrica": "Fecha del Reporte", "Valor": new Date().toLocaleString() }
+            ];
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            wsSummary['!cols'] = [{ wch: 40 }, { wch: 20 }];
+
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, wsDetails, "Detalle Envíos");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen Envío");
+
+            const fileName = `Reporte_WhatsAppSender_${new Date().toISOString().split('T')[0].replace(/-/g,'')}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+            
+            addLog(`📊 Reporte XLSX "${fileName}" exportado exitosamente.`);
+        }
+
+        // --- Step Navigation ---
+        function nextStep(step) {
+            if (validateCurrentStep()) {
+                goToStep(step);
+                // markStepCompleted se llama ahora desde lugares específicos (ej. después de cargar archivo, después de conectar QR)
+            }
+        }
+
+        function prevStep(step) {
+            goToStep(step);
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.step-panel').forEach(panel => panel.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+            
+            document.querySelectorAll('.step-item').forEach(item => item.classList.remove('active'));
+            document.querySelector(`.step-item[data-step="${step}"]`).classList.add('active');
+            
+            currentStep = step;
+            if (step === 4) { // Al ir al paso 4, actualizar UI de envío
+                updateSendingUI();
+                updateStats();
+            }
+        }
+
+        function markStepCompleted(step) {
+            document.querySelector(`.step-item[data-step="${step}"]`).classList.add('completed');
+        }
+
+        function validateCurrentStep() {
+            switch (currentStep) {
+                case 1:
+                    if (contacts.length === 0) {
+                        alert('Debes cargar un archivo Excel con contactos válidos.');
+                        addLog('Validación Paso 1 fallida: No hay contactos.', 'warning');
+                        return false;
+                    }
+                    markStepCompleted(1); // Se marca completo aquí al intentar pasar
+                    break;
+                case 2:
+                    const message = document.getElementById('messageText').value.trim();
+                    if (!message) {
+                        alert('El mensaje a enviar no puede estar vacío.');
+                        addLog('Validación Paso 2 fallida: Mensaje vacío.', 'warning');
+                        return false;
+                    }
+                    markStepCompleted(2);
+                    break;
+                case 3:
+                    if (!isWhatsAppConnected) {
+                        alert('Debes conectar WhatsApp escaneando el código QR generado.');
+                        addLog('Validación Paso 3 fallida: WhatsApp no conectado.', 'warning');
+                        return false;
+                    }
+                    // La marca de completado para el paso 3 se hace cuando el backend confirma la conexión.
+                    break;
+            }
+            return true;
+        }
+
+        // --- Otros ---
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') addLog('Permiso de notificaciones concedido.', 'info');
+                else addLog('Permiso de notificaciones denegado.', 'warning');
+            });
+        }
+
+        window.addEventListener('beforeunload', function(e) {
+            if (isSendingActive) {
+                const confirmationMessage = 'Hay un envío en progreso. ¿Estás seguro de que quieres salir? El envío se detendrá.';
+                e.returnValue = confirmationMessage; // Estándar para la mayoría de navegadores
+                return confirmationMessage;       // Para navegadores más antiguos
+            }
+        });
+    </script>
+</body>
+</html>

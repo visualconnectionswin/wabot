@@ -1,0 +1,26 @@
+{
+  "name": "wabot",
+  "version": "1.0.0",
+  "description": "WhatsApp Sender Pro con Baileys y WebSockets",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "websocket",
+    "sender"
+  ],
+  "author": "Tu Nombre o Alias",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.5",
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
