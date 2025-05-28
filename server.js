@@ -21,7 +21,7 @@ import dotenv from 'dotenv';
 // BuilderBot imports
 import { createBot, createProvider, createFlow } from '@builderbot/bot';
 import BaileysProvider from '@builderbot/provider-baileys';
-import JsonFileAdapter from '@builderbot/database-json';
+import { JsonFileAdapter } from '@builderbot/database-json'; 
 
 // Environment variables
 dotenv.config();
