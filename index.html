@@ -3,1371 +3,770 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Sender Pro</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <title>WhatsApp Bulk Sender PRO</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
             padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+            line-height: 1.6;
         }
-
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 25px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
-
-        .header {
-            background: linear-gradient(135deg, #25D366, #128C7E);
-            color: white;
-            padding: 30px;
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        .grid-item {
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background-color: #fdfdfd;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        h1 {
             text-align: center;
+            margin-bottom: 30px;
+            color: #1a73e8;
         }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            font-weight: 700;
-        }
-
-        .header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-
-        .steps-container {
-            display: flex;
-            min-height: 70vh;
-        }
-
-        .steps-nav {
-            width: 300px;
-            background: #f8f9fa;
-            padding: 30px 0;
-            border-right: 1px solid #e9ecef;
-        }
-
-        .step-item {
-            padding: 20px 30px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border-left: 4px solid transparent;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .step-item:hover {
-            background: #e9ecef;
-        }
-
-        .step-item.active {
-            background: #fff;
-            border-left-color: #25D366;
-            font-weight: 600;
-        }
-
-        .step-number {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #6c757d;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        }
-
-        .step-item.active .step-number {
-            background: #25D366;
-        }
-
-        .step-item.completed .step-number {
-            background: #28a745;
-        }
-
-        .step-content {
-            flex: 1;
-            padding: 40px;
-        }
-
-        .step-panel {
-            display: none;
-        }
-
-        .step-panel.active {
-            display: block;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .upload-area {
-            border: 3px dashed #25D366;
-            border-radius: 15px;
-            padding: 60px 20px;
-            text-align: center;
-            background: #f8f9fa;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .upload-area:hover {
-            background: #e9f7ef;
-            border-color: #128C7E;
-        }
-
-        .upload-area.dragover {
-            background: #d4edda;
-            border-color: #155724;
-        }
-
-        .upload-icon {
-            font-size: 4rem;
-            color: #25D366;
+        h2 {
+            border-bottom: 2px solid #1a73e8;
+            padding-bottom: 10px;
             margin-bottom: 20px;
         }
-
-        .file-input {
-            display: none;
-        }
-
-        .btn {
-            background: #25D366;
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .btn:hover {
-            background: #128C7E;
-            transform: translateY(-2px);
-        }
-
-        .btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn.btn-danger {
-            background: #dc3545;
-        }
-
-        .btn.btn-danger:hover {
-            background: #c82333;
-        }
-
-        .btn.btn-warning {
-            background: #ffc107;
-            color: #212529;
-        }
-
-        .btn.btn-warning:hover {
-            background: #e0a800;
-        }
-        .btn.btn-info {
-            background: #17a2b8;
-        }
-        .btn.btn-info:hover {
-            background: #138496;
-        }
-
-
-        .form-group {
-            margin-bottom: 25px;
-        }
-
-        .form-label {
+        label {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #495057;
+            color: #555;
         }
-
-        .form-control {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
+        input[type="file"],
+        input[type="text"],
+        input[type="number"],
+        input[type="datetime-local"],
+        select,
+        textarea {
+            width: calc(100% - 22px);
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
             font-size: 1rem;
-            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
         }
-
-        .form-control:focus {
+        input:focus, select:focus, textarea:focus {
+            border-color: #1a73e8;
             outline: none;
-            border-color: #25D366;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
         }
-
-        textarea.form-control {
+        textarea {
             resize: vertical;
-            min-height: 120px;
+            min-height: 100px;
         }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s, box-shadow 0.3s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #1558b0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:disabled {
+            background-color: #a0c3ff;
+            cursor: not-allowed;
+        }
+        .qr-area, .status-area, .file-info, .process-info, .process-controls, .message-config {
+            margin-bottom: 20px;
+        }
+        #qrCodeImg {
+            max-width: 250px;
+            height: auto;
+            margin: 10px auto;
+            display: block;
+            border: 1px solid #eee;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        #connectionStatus, #progressText, #processStatusText, #overallStatusText {
+            font-style: italic;
+            color: #555;
+            min-height: 1.2em;
+        }
+        #connectionStatus.connected { color: #27ae60; font-weight: bold; }
+        #connectionStatus.disconnected { color: #c0392b; font-weight: bold; }
 
         .progress-container {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-
-        .progress-bar {
             width: 100%;
-            height: 20px;
-            background: #e9ecef;
-            border-radius: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            margin-top: 10px;
             overflow: hidden;
-            margin-bottom: 15px;
         }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #25D366, #128C7E);
+        .progress-bar {
             width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 10px;
-        }
-
-        .progress-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-        }
-
-        .stat-item {
+            height: 25px;
+            background-color: #27ae60;
             text-align: center;
-            padding: 15px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            line-height: 25px;
+            color: white;
+            transition: width 0.4s ease;
         }
-
-        .stat-number {
-            font-size: 2rem;
-            font-weight: bold;
-            color: #25D366;
-        }
-
-        .stat-label {
-            color: #6c757d;
-            font-size: 0.9rem;
-        }
-
-        .controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin: 30px 0;
-        }
-        .qr-controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 20px;
-        }
-
-
-        .qr-container {
-            text-align: center;
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 15px;
-            margin: 20px 0;
-        }
-
-        .qr-code {
-            margin: 20px 0;
-            display: inline-block;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            min-height: 200px; /* Para que no colapse al inicio */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .qr-code p {
-            color: #6c757d;
-            padding: 20px;
-        }
-        .qr-code img {
-            max-width: 100%;
-            height: auto;
-            max-height: 250px;
-        }
-
-
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-disconnected { background: #dc3545; }
-        .status-connecting { background: #ffc107; }
-        .status-connected { background: #28a745; }
-
-        .contact-preview {
-            max-height: 300px;
+        #contactsPreview {
+            max-height: 150px;
             overflow-y: auto;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 15px;
-            background: #f8f9fa;
+            border: 1px solid #eee;
+            padding: 10px;
+            background-color: #f9f9f9;
+            font-size: 0.9em;
+            border-radius: 4px;
         }
-
-        .contact-item {
-            padding: 8px 0;
-            border-bottom: 1px solid #e9ecef;
+        #contactsPreview p { margin: 5px 0; }
+        .error-message {
+            color: #c0392b;
+            background-color: #fdd;
+            border: 1px solid #c0392b;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .success-message {
+            color: #27ae60;
+            background-color: #dfd;
+            border: 1px solid #27ae60;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            font-size: 1rem;
+            margin-right: 5px;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-button.active {
+            border-bottom: 3px solid #1a73e8;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        #processesList {
+            list-style-type: none;
+            padding: 0;
+        }
+        #processesList li {
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-
-        .contact-item:last-child {
-            border-bottom: none;
-        }
-
-        .contact-name {
-            font-weight: 600;
-        }
-
-        .contact-number {
-            color: #6c757d;
-            font-size: 0.9rem;
-        }
-
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .log-container {
-            max-height: 200px;
-            overflow-y: auto;
-            background: #212529;
-            color: #28a745; /* Verde para el texto */
-            padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9rem;
-            margin: 20px 0;
-        }
-
-        .log-entry {
-            margin-bottom: 5px;
-            opacity: 0;
-            animation: logFade 0.3s ease forwards;
-        }
-        .log-entry.error { color: #dc3545; } /* Rojo para errores */
-        .log-entry.warning { color: #ffc107; } /* Amarillo para advertencias */
-        .log-entry.info { color: #17a2b8; } /* Azul para info */
-
-
-        @keyframes logFade {
-            to { opacity: 1; }
-        }
-
-        .time-controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin: 20px 0;
-        }
+        #processesList li .details { flex-grow: 1; }
+        #processesList li .actions button { font-size: 0.8em; padding: 8px 12px; margin-left: 5px; }
 
         @media (max-width: 768px) {
-            .steps-container {
-                flex-direction: column;
-            }
-            
-            .steps-nav {
-                width: 100%;
-                display: flex;
-                overflow-x: auto;
-                padding: 20px 0;
-            }
-            
-            .step-item {
-                min-width: 200px;
-                text-align: center;
-                border-left: none;
-                border-bottom: 4px solid transparent;
-            }
-            
-            .step-item.active {
-                border-left: none;
-                border-bottom-color: #25D366;
+            .grid-container {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>WhatsApp Sender Pro</h1>
-            <p>Sistema profesional de envío masivo de mensajes</p>
+        <h1>WhatsApp Bulk Sender PRO</h1>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab(event, 'mainTab')">Envío Principal</button>
+            <button class="tab-button" onclick="openTab(event, 'statusTab')">Estado del Sistema</button>
+            <button class="tab-button" onclick="openTab(event, 'processesTab')">Gestión de Procesos</button>
         </div>
 
-        <div class="steps-container">
-            <div class="steps-nav">
-                <div class="step-item active" data-step="1">
-                    <div class="step-number">1</div>
-                    <div>
-                        <div>Cargar Archivo</div>
-                        <small>Importar contactos</small>
-                    </div>
+        <div id="mainTab" class="tab-content active">
+            <div class="grid-container">
+                <div class="grid-item qr-area">
+                    <h2>Autenticación WhatsApp</h2>
+                    <img id="qrCodeImg" src="" alt="Escanea el código QR">
+                    <p id="connectionStatus">Estado de conexión: Desconectado</p>
+                    <button id="requestQRButton">Solicitar Nuevo QR (si no aparece)</button>
                 </div>
-                <div class="step-item" data-step="2">
-                    <div class="step-number">2</div>
-                    <div>
-                        <div>Configurar Mensaje</div>
-                        <small>Personalizar envío</small>
-                    </div>
-                </div>
-                <div class="step-item" data-step="3">
-                    <div class="step-number">3</div>
-                    <div>
-                        <div>Conectar WhatsApp</div>
-                        <small>Escanear QR</small>
-                    </div>
-                </div>
-                <div class="step-item" data-step="4">
-                    <div class="step-number">4</div>
-                    <div>
-                        <div>Envío Masivo</div>
-                        <small>Monitoreo en tiempo real</small>
-                    </div>
-                </div>
-            </div>
 
-            <div class="step-content">
-                <!-- Paso 1: Cargar Archivo -->
-                <div class="step-panel active" id="step-1">
-                    <h2>Paso 1: Cargar Archivo de Contactos</h2>
-                    <p>Arrastra tu archivo Excel (.xlsx) o haz clic para seleccionarlo.
-                       <br><small>El archivo debe tener el nombre en la columna B, y los números en las columnas D, E, F.</small>
-                    </p>
-                    
-                    <div class="upload-area" id="uploadArea">
-                        <div class="upload-icon">📁</div>
-                        <h3>Arrastra tu archivo aquí</h3>
-                        <p>o haz clic para seleccionar</p>
-                        <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls">
-                        <button class="btn" onclick="document.getElementById('fileInput').click()">
-                            Seleccionar Archivo
-                        </button>
-                    </div>
-
+                <div class="grid-item file-upload-area">
+                    <h2>1. Cargar Archivo Excel</h2>
+                    <form id="uploadForm">
+                        <label for="excelFile">Archivo Excel (.xlsx, .xls):</label>
+                        <input type="file" id="excelFile" name="excel" accept=".xlsx, .xls" required>
+                        <button type="submit" id="uploadButton">Procesar Archivo</button>
+                    </form>
                     <div id="fileInfo" style="display: none;">
-                        <div class="alert alert-success">
-                            <strong>Archivo cargado exitosamente:</strong>
-                            <div id="fileName"></div>
-                            <div id="fileStats"></div>
-                        </div>
-                        
-                        <div class="contact-preview" id="contactPreview"></div>
-                        
-                        <button class="btn" onclick="nextStep(2)">
-                            Continuar al Paso 2 →
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Paso 2: Configurar Mensaje -->
-                <div class="step-panel" id="step-2">
-                    <h2>Paso 2: Configurar Mensaje y Timing</h2>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Mensaje a enviar:</label>
-                        <textarea class="form-control" id="messageText" placeholder="Hola {nombre}, este es un mensaje personalizado...
-
-Variables disponibles:
-{nombre} - Nombre del contacto (primer nombre)
-{numero} - Número de teléfono (con prefijo +51)
-
-Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
-                    </div>
-
-                    <div class="time-controls">
-                        <div class="form-group">
-                            <label class="form-label">Intervalo entre mensajes (segundos):</label>
-                            <input type="number" class="form-control" id="messageInterval" value="5" min="1" max="60">
-                            <small>Recomendado: 3-10 segundos para evitar bloqueos</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Pausa tras lote de (mensajes):</label>
-                            <input type="number" class="form-control" id="batchSize" value="20" min="1" max="200">
-                            <small>Pausa de 30s cada X mensajes (gestionado por backend)</small>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Vista previa del mensaje:</label>
-                        <div id="messagePreview" class="form-control" style="background: #f8f9fa; min-height: 80px;"></div>
-                    </div>
-
-                    <div class="controls">
-                        <button class="btn" onclick="prevStep(1)">← Anterior</button>
-                        <button class="btn" onclick="nextStep(3)">Continuar al QR →</button>
-                    </div>
-                </div>
-
-                <!-- Paso 3: Conectar WhatsApp -->
-                <div class="step-panel" id="step-3">
-                    <h2>Paso 3: Conectar WhatsApp</h2>
-                    
-                    <div class="qr-container">
-                        <h3>
-                            <span class="status-indicator status-disconnected" id="statusIndicator"></span>
-                            <span id="connectionStatus">Desconectado del Backend</span>
-                        </h3>
-                        
-                        <div id="qrCode" class="qr-code">
-                            <p>Esperando conexión con el servidor para generar QR...</p>
-                        </div>
-                        
-                        <div class="qr-controls">
-                             <button class="btn" id="generateQRBtn" onclick="requestQRCodeGeneration()" disabled>
-                                Solicitar Nuevo QR
-                            </button>
-                            <button class="btn btn-danger" id="logoutBtn" onclick="requestLogout()" disabled>
-                                Desconectar WhatsApp
-                            </button>
-                        </div>
-                       
-                        
-                        <div style="margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
-                            <h4>Instrucciones:</h4>
-                            <ol>
-                                <li>Abre WhatsApp en tu teléfono.</li>
-                                <li>Ve a Configuración > Dispositivos vinculados.</li>
-                                <li>Toca "Vincular un dispositivo".</li>
-                                <li>Escanea el código QR que aparecerá arriba.</li>
-                            </ol>
-                        </div>
-                    </div>
-
-                    <div class="controls">
-                        <button class="btn" onclick="prevStep(2)">← Anterior</button>
-                        <button class="btn" id="goToSendingBtn" onclick="nextStep(4)" disabled>
-                            Ir a Envío Masivo →
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Paso 4: Envío Masivo -->
-                <div class="step-panel" id="step-4">
-                    <h2>Paso 4: Envío Masivo en Progreso</h2>
-                    
-                    <div class="progress-container">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progressFill"></div>
-                        </div>
-                        
-                        <div class="progress-stats">
-                            <div class="stat-item">
-                                <div class="stat-number" id="sentCount">0</div>
-                                <div class="stat-label">Enviados</div>
-                            </div>
-                            <div class="stat-item">
-                                <div class="stat-number" id="failedCount">0</div>
-                                <div class="stat-label">Fallidos</div>
-                            </div>
-                            <div class="stat-item">
-                                <div class="stat-number" id="remainingCount">0</div>
-                                <div class="stat-label">Restantes</div>
-                            </div>
-                            <div class="stat-item">
-                                <div class="stat-number" id="estimatedTime">--</div>
-                                <div class="stat-label">Tiempo estimado</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="controls">
-                        <button class="btn" id="startBtn" onclick="requestStartSending()">
-                            ▶️ Iniciar Envío
-                        </button>
-                        <button class="btn btn-warning" id="pauseBtn" onclick="requestPauseSending()" disabled>
-                            ⏸️ Pausar
-                        </button>
-                        <button class="btn btn-danger" id="stopBtn" onclick="requestStopSending()" disabled>
-                            ⏹️ Detener
-                        </button>
-                    </div>
-
-                    <div class="log-container" id="logContainer">
-                        <div class="log-entry">Sistema iniciado - Esperando comandos...</div>
-                    </div>
-
-                    <div class="controls">
-                        <button class="btn" onclick="resetProcess()">
-                            🔄 Nuevo Proceso
-                        </button>
-                        <button class="btn" onclick="exportReport()">
-                            📊 Exportar Reporte (XLSX)
-                        </button>
+                        <h3>Información del Archivo:</h3>
+                        <p>Filas Totales: <span id="totalRows"></span></p>
+                        <p>Contactos Válidos: <span id="validContactsCount"></span></p>
+                        <p>Números Totales: <span id="totalNumbers"></span></p>
+                        <h4>Vista Previa (primeros 5):</h4>
+                        <div id="contactsPreview"></div>
                     </div>
                 </div>
             </div>
+
+            <div class="grid-item message-config">
+                <h2>2. Configurar Mensaje y Envío</h2>
+                <form id="bulkSendForm">
+                    <div>
+                        <label for="messageTemplate">Plantilla del Mensaje (usa {nombre} para el primer nombre):</label>
+                        <textarea id="messageTemplate" rows="5" placeholder="Ej: Hola {nombre}, te recordamos nuestra promoción..."></textarea>
+                    </div>
+                    <div>
+                        <label for="delay">Retraso entre mensajes (milisegundos):</label>
+                        <input type="number" id="delay" value="3000" min="1000" max="300000">
+                    </div>
+                    <div>
+                        <label for="mediaUrl">URL del Archivo Multimedia (Opcional):</label>
+                        <input type="text" id="mediaUrl" placeholder="https://ejemplo.com/imagen.jpg">
+                    </div>
+                    <div>
+                        <label for="mediaType">Tipo de Multimedia (si URL está presente):</label>
+                        <select id="mediaType">
+                            <option value="">Ninguno</option>
+                            <option value="image">Imagen</option>
+                            <option value="video">Video</option>
+                            <option value="document">Documento</option>
+                            <option value="audio">Audio</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="scheduledTime">Programar Envío (Opcional):</label>
+                        <input type="datetime-local" id="scheduledTime">
+                    </div>
+                    <button type="submit" id="startBulkSendButton" disabled>Iniciar Envío Masivo</button>
+                </form>
+            </div>
+
+            <div class="grid-item process-info">
+                <h2>Progreso del Envío Actual</h2>
+                <p>ID del Proceso: <span id="currentProcessId">-</span></p>
+                <p id="processStatusText">Estado: Esperando inicio</p>
+                <div class="progress-container">
+                    <div id="progressBar" class="progress-bar">0%</div>
+                </div>
+                <p id="progressText">Enviados: 0/0 | Exitosos: 0 | Fallidos: 0</p>
+                <div class="process-controls">
+                    <button id="pauseButton" disabled>Pausar</button>
+                    <button id="resumeButton" disabled>Reanudar</button>
+                    <button id="stopButton" disabled>Detener</button>
+                </div>
+            </div>
         </div>
+
+        <div id="statusTab" class="tab-content">
+            <h2>Estado General del Sistema</h2>
+            <button id="refreshOverallStatusButton">Actualizar Estado</button>
+            <div id="overallStatusArea">
+                <pre id="overallStatusText">Cargando estado...</pre>
+            </div>
+        </div>
+        
+        <div id="processesTab" class="tab-content">
+            <h2>Gestión de Procesos de Envío</h2>
+            <button id="refreshProcessesListButton">Actualizar Lista</button>
+            <ul id="processesList">
+                <!-- Los procesos se listarán aquí -->
+            </ul>
+        </div>
+
+        <div id="messageArea"></div>
+
     </div>
 
     <script>
-        // Variables globales
-        let contacts = []; 
-        let currentStep = 1;
-        let isWhatsAppConnected = false; 
-        let isBackendSocketConnected = false;
-        let isSendingActive = false; 
-        let isSendingPaused = false; 
-        
-        let currentProcessingIndex = 0; 
-        let sentSuccessfullyCount = 0;
-        let failedToSendCount = 0;
-        
-        let socket; 
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsURL = `${wsProtocol}//${window.location.host}`;
+        let ws = null;
 
-        // --- WebSocket Communication ---
+        let a_excelContacts = [];
+        let a_currentProcessId = null;
+
+        // Elementos UI
+        const qrCodeImg = document.getElementById('qrCodeImg');
+        const connectionStatusP = document.getElementById('connectionStatus');
+        const requestQRButton = document.getElementById('requestQRButton');
+
+        const uploadForm = document.getElementById('uploadForm');
+        const excelFile = document.getElementById('excelFile');
+        const uploadButton = document.getElementById('uploadButton');
+        const fileInfoDiv = document.getElementById('fileInfo');
+        const totalRowsSpan = document.getElementById('totalRows');
+        const validContactsCountSpan = document.getElementById('validContactsCount');
+        const totalNumbersSpan = document.getElementById('totalNumbers');
+        const contactsPreviewDiv = document.getElementById('contactsPreview');
+
+        const bulkSendForm = document.getElementById('bulkSendForm');
+        const messageTemplateTextarea = document.getElementById('messageTemplate');
+        const delayInput = document.getElementById('delay');
+        const mediaUrlInput = document.getElementById('mediaUrl');
+        const mediaTypeSelect = document.getElementById('mediaType');
+        const scheduledTimeInput = document.getElementById('scheduledTime');
+        const startBulkSendButton = document.getElementById('startBulkSendButton');
+
+        const currentProcessIdSpan = document.getElementById('currentProcessId');
+        const processStatusTextP = document.getElementById('processStatusText');
+        const progressBar = document.getElementById('progressBar');
+        const progressTextP = document.getElementById('progressText');
+        const pauseButton = document.getElementById('pauseButton');
+        const resumeButton = document.getElementById('resumeButton');
+        const stopButton = document.getElementById('stopButton');
+
+        const messageArea = document.getElementById('messageArea');
+
+        const overallStatusArea = document.getElementById('overallStatusArea');
+        const overallStatusText = document.getElementById('overallStatusText');
+        const refreshOverallStatusButton = document.getElementById('refreshOverallStatusButton');
+        
+        const processesListUl = document.getElementById('processesList');
+        const refreshProcessesListButton = document.getElementById('refreshProcessesListButton');
+
+        function showMessage(text, type = 'info') {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.className = type === 'error' ? 'error-message' : (type === 'success' ? 'success-message' : 'info-message');
+            messageArea.innerHTML = ''; // Limpiar mensajes anteriores
+            messageArea.appendChild(div);
+            setTimeout(() => {
+                if (messageArea.contains(div)) {
+                     messageArea.removeChild(div);
+                }
+            }, 5000);
+        }
+
         function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`; 
-            
-            addLog('🔌 Intentando conectar al backend vía WebSocket...', 'info');
-            socket = new WebSocket(wsUrl);
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                console.log('WebSocket ya está conectado o conectándose.');
+                return;
+            }
 
-            socket.onopen = () => {
-                isBackendSocketConnected = true;
-                addLog('🔌 Conectado al backend exitosamente.', 'info');
-                document.getElementById('connectionStatus').textContent = 'Conectado al Servidor';
-                document.getElementById('statusIndicator').className = 'status-indicator status-connecting'; // Indica que estamos listos para conectar WA
-                document.getElementById('generateQRBtn').disabled = false;
-                document.getElementById('logoutBtn').disabled = false; // Habilitar siempre, el backend manejará si hay sesión o no
-                document.getElementById('qrCode').innerHTML = '<p>Haz clic en "Solicitar Nuevo QR" para conectar tu WhatsApp.</p>';
-                // Pedir estado inicial de Baileys al backend
-                sendToBackend('get_initial_baileys_status');
+            ws = new WebSocket(wsURL);
+
+            ws.onopen = () => {
+                console.log('WebSocket conectado al servidor.');
+                connectionStatusP.textContent = 'Estado de conexión: Conectado al servidor.';
+                // Solicitar estado inicial de WhatsApp al conectar
+                ws.send(JSON.stringify({ type: 'get_status' }));
+                fetchProcesses(); // Cargar procesos al conectar
             };
 
-            socket.onmessage = (event) => {
+            ws.onmessage = (event) => {
                 try {
-                    const data = JSON.parse(event.data);
-                    handleWebSocketMessage(data);
+                    const message = JSON.parse(event.data);
+                    console.log('Mensaje del servidor:', message);
+
+                    switch (message.type) {
+                        case 'qr_update':
+                            qrCodeImg.src = message.data || '';
+                            if (message.data) {
+                                connectionStatusP.textContent = 'Estado de conexión: Escanee el QR.';
+                                connectionStatusP.className = 'disconnected';
+                            } else if (!connectionStatusP.textContent.includes('Autenticado')) {
+                                connectionStatusP.textContent = 'Estado de conexión: QR no disponible, esperando autenticación...';
+                                connectionStatusP.className = 'disconnected';
+                            }
+                            break;
+                        case 'status_update': // Para estado de conexión WhatsApp
+                            if (message.data.connected) {
+                                connectionStatusP.textContent = `Estado de conexión: Autenticado como ${message.data.user?.name || message.data.user?.id || 'Usuario'}.`;
+                                connectionStatusP.className = 'connected';
+                                qrCodeImg.src = ''; // Limpiar QR si está autenticado
+                            } else {
+                                connectionStatusP.textContent = 'Estado de conexión: WhatsApp Desconectado. Solicitando QR...';
+                                connectionStatusP.className = 'disconnected';
+                                ws.send(JSON.stringify({ type: 'request_qr' }));
+                            }
+                            break;
+                        case 'process_update':
+                            updateProcessUI(message.data);
+                            break;
+                        default:
+                            console.log("Mensaje desconocido del WebSocket:", message);
+                    }
                 } catch (error) {
-                    console.error('Error parsing WebSocket message:', error, event.data);
-                    addLog('Error procesando mensaje del backend: ' + event.data.substring(0, 100), 'error');
+                    console.error('Error procesando mensaje WebSocket:', error);
                 }
             };
 
-            socket.onerror = (error) => {
-                isBackendSocketConnected = false;
+            ws.onerror = (error) => {
                 console.error('WebSocket Error:', error);
-                addLog('Error de conexión WebSocket con el backend. Ver consola.', 'error');
-                document.getElementById('connectionStatus').textContent = 'Error conexión Backend';
-                document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
-                document.getElementById('generateQRBtn').disabled = true;
-                document.getElementById('logoutBtn').disabled = true;
-                document.getElementById('qrCode').innerHTML = '<p style="color:red;">Error de conexión con el servidor. Intenta recargar la página.</p>';
+                connectionStatusP.textContent = 'Error de conexión WebSocket.';
+                connectionStatusP.className = 'disconnected';
+                disableAllControls();
             };
 
-            socket.onclose = () => {
-                isBackendSocketConnected = false;
-                isWhatsAppConnected = false;
-                addLog('🔌 Desconectado del backend. Intentando reconectar en 5s...', 'warning');
-                document.getElementById('connectionStatus').textContent = 'Desconectado del Backend';
-                document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
-                document.getElementById('generateQRBtn').disabled = true;
-                document.getElementById('logoutBtn').disabled = true;
-                 document.getElementById('qrCode').innerHTML = '<p style="color:orange;">Desconectado del servidor. Intentando reconectar...</p>';
-                updateUIAfterQRStatus();
-                setTimeout(connectWebSocket, 5000); 
+            ws.onclose = (event) => {
+                console.log('WebSocket desconectado:', event.code, event.reason);
+                connectionStatusP.textContent = `Estado de conexión: Desconectado del Servidor (${event.code}).`;
+                connectionStatusP.className = 'disconnected';
+                disableAllControls();
+                // Intentar reconectar después de un tiempo
+                setTimeout(connectWebSocket, 5000);
             };
         }
+        
+        function disableAllControls() {
+            uploadButton.disabled = true;
+            startBulkSendButton.disabled = true;
+            pauseButton.disabled = true;
+            resumeButton.disabled = true;
+            stopButton.disabled = true;
+        }
 
-        function sendToBackend(type, payload = {}) {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type, payload }));
+        requestQRButton.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'request_qr' }));
+                showMessage('Solicitando nuevo QR...', 'info');
             } else {
-                addLog('⚠️ No se pudo enviar comando: WebSocket no conectado.', 'warning');
-                // alert('Error: No hay conexión con el servidor. Por favor, recarga la página.');
+                showMessage('WebSocket no conectado. Intentando reconectar...', 'error');
+                connectWebSocket();
             }
-        }
-
-        function handleWebSocketMessage(data) {
-            const { type, payload } = data;
-            // Evitar loguear el QR completo
-            const logPayload = (type === 'qr_code' && payload && payload.qr) ? '{ qr: "..." }' : (payload ? JSON.stringify(payload).substring(0,100)+'...' : '');
-            addLog(`📬 Backend: ${type} ${logPayload}`);
-
-            const qrContainer = document.getElementById('qrCode');
-            const statusIndicator = document.getElementById('statusIndicator');
-            const statusText = document.getElementById('connectionStatus');
-            const generateQRBtn = document.getElementById('generateQRBtn');
-            const logoutBtn = document.getElementById('logoutBtn');
-
-            switch (type) {
-                case 'qr_code':
-                    addLog('QR recibido, renderizando...', 'info');
-                    if (payload && payload.qr) {
-                        const qr = qrcode(0, 'M'); // type 0, error correction M
-                        qr.addData(payload.qr);
-                        qr.make();
-                        qrContainer.innerHTML = `<img src="${qr.createDataURL(10, 10)}" alt="QR Code">`; // Aumentar tamaño y padding
-                        statusText.textContent = 'Escanea el código QR con WhatsApp';
-                        statusIndicator.className = 'status-indicator status-connecting';
-                        isWhatsAppConnected = false; // Aún no está conectado, solo mostrando QR
-                    } else {
-                         qrContainer.innerHTML = `<p style="color: red;">Error: QR no recibido correctamente del backend.</p>`;
-                    }
-                    generateQRBtn.disabled = false;
-                    logoutBtn.disabled = false;
-                    break;
-
-                case 'connection_update': 
-                    isWhatsAppConnected = payload.status === 'open';
-                    if (payload.status === 'open') {
-                        statusIndicator.className = 'status-indicator status-connected';
-                        statusText.textContent = 'WhatsApp Conectado';
-                        qrContainer.innerHTML = `
-                            <div style="padding: 40px; color: #28a745;">
-                                <div style="font-size: 3rem;">✅</div>
-                                <p><strong>¡WhatsApp Conectado!</strong></p>
-                                <p>${payload.message || ''}</p>
-                            </div>`;
-                        markStepCompleted(3);
-                    } else if (payload.status === 'connecting') {
-                        statusIndicator.className = 'status-indicator status-connecting';
-                        statusText.textContent = 'Conectando WhatsApp...';
-                         qrContainer.innerHTML = `<p>Conectando WhatsApp... ${payload.message || ''}</p>`;
-                    } else { // closed or error
-                        isWhatsAppConnected = false;
-                        statusIndicator.className = 'status-indicator status-disconnected';
-                        statusText.textContent = `WhatsApp Desconectado`;
-                         qrContainer.innerHTML = `
-                            <div style="padding: 20px; color: #dc3545;">
-                                <div style="font-size: 2rem;">⚠️</div>
-                                <p><strong>WhatsApp Desconectado</strong></p>
-                                <p>${payload.message || 'Intenta solicitar un nuevo QR.'}</p>
-                            </div>`;
-                        // No desmarcar el paso 3 como completado, el usuario podría querer reintentar
-                    }
-                    generateQRBtn.disabled = false; // Siempre permitir solicitar nuevo QR
-                    logoutBtn.disabled = !isWhatsAppConnected; // Solo habilitar si está conectado
-                    updateUIAfterQRStatus();
-                    break;
-
-                case 'sending_started':
-                    isSendingActive = true;
-                    isSendingPaused = false;
-                    addLog('🚀 Envío iniciado por el backend.', 'info');
-                    updateSendingUI();
-                    break;
-
-                case 'message_status':
-                    currentProcessingIndex++;
-                    const contactIndex = contacts.findIndex(c => c.number === payload.contact.number && c.name === payload.contact.name && c.originalRow === payload.contact.originalRow);
-
-                    if (payload.status === 'sent') {
-                        sentSuccessfullyCount++;
-                        addLog(`✅ Enviado a ${payload.contact.name} (${payload.contact.number})`);
-                        if(contactIndex !== -1) contacts[contactIndex].status = 'Enviado';
-                    } else {
-                        failedToSendCount++;
-                        addLog(`❌ Falló envío a ${payload.contact.name} (${payload.contact.number}): ${payload.error || 'Error desconocido'}`, 'error');
-                        if(contactIndex !== -1) {
-                            contacts[contactIndex].status = 'Fallido';
-                            contacts[contactIndex].error = payload.error || 'Error desconocido';
-                        }
-                    }
-                    updateStats();
-                    break;
-                
-                case 'batch_pause_notification':
-                     addLog(`⏸️ Pausa automática por lote. Reanudará pronto.`, 'info');
-                     break;
-
-                case 'sending_paused':
-                    isSendingPaused = true;
-                    addLog('⏸️ Envío pausado por el backend.', 'info');
-                    updateSendingUI();
-                    break;
-                
-                case 'sending_resumed':
-                    isSendingPaused = false;
-                    addLog('▶️ Envío reanudado por el backend.', 'info');
-                    updateSendingUI();
-                    break;
-
-                case 'sending_stopped':
-                case 'sending_finished':
-                    isSendingActive = false;
-                    isSendingPaused = false;
-                    if (type === 'sending_finished') addLog('🎉 ¡Envío masivo completado por el backend!', 'info');
-                    else addLog('🛑 Envío detenido por el backend.', 'warning');
-                    addLog(`📊 Resumen: ${sentSuccessfullyCount} enviados, ${failedToSendCount} fallidos.`);
-                    updateSendingUI();
-                    updateStats(); 
-                    if (Notification.permission === 'granted') {
-                        new Notification('WhatsApp Sender Pro', {
-                            body: `Envío finalizado: ${sentSuccessfullyCount} mensajes enviados.`,
-                        });
-                    }
-                    break;
-                
-                case 'error_message': 
-                    addLog(`Error del Backend: ${payload.message}`, 'error');
-                    // alert(`Error del Servidor: ${payload.message}`); // Puede ser molesto
-                    if (payload.message && payload.message.includes("WhatsApp no está conectado")) {
-                         document.getElementById('qrCode').innerHTML = `<p style="color:red;">Error del servidor: ${payload.message}</p>`;
-                         statusIndicator.className = 'status-indicator status-disconnected';
-                         statusText.textContent = `WhatsApp Desconectado`;
-                         isWhatsAppConnected = false;
-                         updateUIAfterQRStatus();
-                    }
-                    break;
-                
-                case 'info': // Mensajes informativos generales del backend
-                     addLog(`Info del Backend: ${payload.message}`, 'info');
-                     break;
-
-                default:
-                    addLog(`Mensaje desconocido del backend: ${type}`, 'warning');
-            }
-        }
-
-        // --- Inicialización y UI ---
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeApp();
-            connectWebSocket(); 
         });
 
-        function initializeApp() {
-            const uploadArea = document.getElementById('uploadArea');
-            const fileInput = document.getElementById('fileInput');
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!excelFile.files.length) {
+                showMessage('Por favor, selecciona un archivo Excel.', 'error');
+                return;
+            }
 
-            uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-            uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('dragover'); });
-            uploadArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
-            });
-            fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFile(e.target.files[0]); });
+            const formData = new FormData();
+            formData.append('excel', excelFile.files[0]);
+            uploadButton.disabled = true;
+            uploadButton.textContent = 'Procesando...';
 
-            document.getElementById('messageText').addEventListener('input', updateMessagePreview);
-            document.querySelectorAll('.step-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const step = parseInt(item.dataset.step);
-                    if (step < currentStep || item.classList.contains('completed')) { 
-                         goToStep(step);
-                    } else if (step === currentStep + 1 && validateCurrentStep()) { 
-                        goToStep(step);
-                    }
+            try {
+                const response = await fetch('/api/upload-excel', {
+                    method: 'POST',
+                    body: formData
                 });
-            });
-            updateMessagePreview();
-            updateStats(); 
-        }
+                const result = await response.json();
 
-        function handleFile(file) {
-            if (!file.name.match(/\.(xlsx|xls)$/)) {
-                alert('Por favor selecciona un archivo Excel (.xlsx o .xls)');
-                addLog('Error: Tipo de archivo no válido: ' + file.name, 'error');
-                return;
-            }
-
-            addLog('Procesando archivo: ' + file.name, 'info');
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: false, defval: ""}); 
-
-                    processContacts(jsonData, file.name);
-                } catch (error) {
-                    alert('Error al leer el archivo Excel: ' + error.message);
-                    addLog('Error leyendo Excel: ' + error.message, 'error');
-                    console.error(error);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        function processContacts(data, fileName) {
-            contacts = [];
-            let validContactsCount = 0;
-            let invalidRowsCount = 0;
-
-            for (let i = 1; i < data.length; i++) {
-                const row = data[i];
-                if (!row || row.length < 2) { // Necesita al menos hasta la columna B
-                    invalidRowsCount++;
-                    continue;
-                }
-                const fullName = row[1] ? String(row[1]).trim() : '';
-                const firstName = fullName.split(' ')[0];
-                const numbersInRow = [];
-                for (let colIdx of [3, 4, 5]) { // Columnas D, E, F (índices 3, 4, 5)
-                    if (row[colIdx]) {
-                        const rawNumber = String(row[colIdx]).trim();
-                        if (isValidPeruvianNumber(rawNumber)) {
-                            numbersInRow.push(formatPeruvianNumber(rawNumber));
-                        }
-                    }
-                }
-                if (firstName && numbersInRow.length > 0) {
-                    numbersInRow.forEach(number => {
-                        contacts.push({
-                            name: firstName,
-                            number: number,
-                            originalRow: i + 1, 
-                            status: 'Pendiente', 
-                            error: null
-                        });
-                        validContactsCount++;
+                if (result.success && result.data) {
+                    showMessage('Archivo procesado exitosamente.', 'success');
+                    fileInfoDiv.style.display = 'block';
+                    totalRowsSpan.textContent = result.data.totalRows;
+                    validContactsCountSpan.textContent = result.data.validContacts;
+                    totalNumbersSpan.textContent = result.data.summary.totalNumbers;
+                    
+                    contactsPreviewDiv.innerHTML = ''; // Limpiar vista previa anterior
+                    result.data.contacts.forEach(contact => {
+                        const p = document.createElement('p');
+                        p.textContent = `Nombre: ${contact.name}, Números: ${contact.numbers.join(', ')}, Fila: ${contact.rowIndex}`;
+                        contactsPreviewDiv.appendChild(p);
                     });
-                } else if (firstName || numbersInRow.length > 0) { // Si hay nombre pero no números, o viceversa con números válidos
-                    invalidRowsCount++;
-                } else if (!firstName && numbersInRow.length === 0 && row.some(cell => String(cell).trim() !== "")) {
-                    // Fila con algún dato pero no los necesarios
-                     invalidRowsCount++;
+
+                    // Guardar todos los contactos, no solo la vista previa
+                    const fullContactsResponse = await fetch('/api/upload-excel', { // Re-llamada para obtener todos los contactos
+                         method: 'POST',
+                         body: formData // Enviar de nuevo el archivo para obtener todos los datos
+                    });
+                    const fullResult = await fullContactsResponse.json();
+                    if (fullResult.success) {
+                       a_excelContacts = fullResult.data.contacts; // Actualizar con todos los contactos
+                    } else {
+                       a_excelContacts = result.data.contacts; // fallback a los de preview
+                    }
+
+
+                    if (a_excelContacts.length > 0) {
+                        startBulkSendButton.disabled = false;
+                    } else {
+                        startBulkSendButton.disabled = true;
+                        showMessage('No se encontraron contactos válidos en el archivo.', 'error');
+                    }
+                } else {
+                    showMessage(result.error || 'Error al procesar el archivo.', 'error');
+                    startBulkSendButton.disabled = true;
                 }
+            } catch (error) {
+                console.error('Error subiendo archivo:', error);
+                showMessage('Error de red al subir el archivo.', 'error');
+                startBulkSendButton.disabled = true;
+            } finally {
+                uploadButton.disabled = false;
+                uploadButton.textContent = 'Procesar Archivo';
             }
+        });
 
-            document.getElementById('fileName').textContent = fileName;
-            document.getElementById('fileStats').innerHTML = `
-                <div style="margin-top: 10px;">
-                    <strong>Contactos válidos (nombre+número):</strong> ${validContactsCount}<br>
-                    <strong>Filas inválidas/sin datos suficientes:</strong> ${invalidRowsCount}<br>
-                    <strong>Total filas de datos procesadas:</strong> ${data.length - 1}
-                </div>
-            `;
-            
-            displayContactPreview();
-            document.getElementById('fileInfo').style.display = 'block';
-            markStepCompleted(1);
-            addLog(`Archivo "${fileName}" procesado: ${validContactsCount} contactos válidos.`, 'info');
-            updateStats(); 
-        }
-
-        function isValidPeruvianNumber(numberStr) {
-            const cleanNumber = numberStr.replace(/\D/g, ''); 
-            return cleanNumber.length === 9 && cleanNumber.startsWith('9');
-        }
-
-        function formatPeruvianNumber(numberStr) {
-            const cleanNumber = numberStr.replace(/\D/g, '');
-            return '51' + cleanNumber; 
-        }
-
-        function displayContactPreview() {
-            const previewEl = document.getElementById('contactPreview');
-            const maxShow = 10;
-            let html = `<h4>Vista previa de contactos (mostrando ${Math.min(maxShow, contacts.length)} de ${contacts.length}):</h4>`;
-            
-            for (let i = 0; i < Math.min(maxShow, contacts.length); i++) {
-                const contact = contacts[i];
-                html += `
-                    <div class="contact-item">
-                        <div>
-                            <div class="contact-name">${contact.name}</div>
-                            <div class="contact-number">+${contact.number}</div>
-                        </div>
-                    </div>
-                `;
-            }
-            if (contacts.length > maxShow) {
-                html += `<div style="text-align: center; margin-top: 10px; color: #6c757d;">... y ${contacts.length - maxShow} contactos más</div>`;
-            }
-            previewEl.innerHTML = contacts.length > 0 ? html : "<p>No se encontraron contactos válidos para previsualizar.</p>";
-        }
-
-        function updateMessagePreview() {
-            const messageText = document.getElementById('messageText').value;
-            const previewEl = document.getElementById('messagePreview');
-            
-            if (contacts.length > 0) {
-                const sampleContact = contacts[0];
-                const previewMessage = messageText
-                    .replace(/{nombre}/g, sampleContact.name)
-                    .replace(/{numero}/g, `+${sampleContact.number}`); 
-                previewEl.innerHTML = `<strong>Ejemplo con "${sampleContact.name}":</strong><br>${previewMessage.replace(/\n/g, '<br>') || 'Escribe tu mensaje...'}`;
-            } else {
-                previewEl.innerHTML = messageText.replace(/\n/g, '<br>') || 'Escribe tu mensaje... (carga contactos para ver un ejemplo real)';
-            }
-        }
-        
-        function updateUIAfterQRStatus() {
-            document.getElementById('goToSendingBtn').disabled = !isWhatsAppConnected;
-            document.getElementById('logoutBtn').disabled = !isWhatsAppConnected && !isBackendSocketConnected; // Deshabilitar solo si no hay conexión WA ni backend
-             // Habilitar generar QR si el backend está conectado
-            document.getElementById('generateQRBtn').disabled = !isBackendSocketConnected;
-        }
-
-        // --- QR Code Logic ---
-        function requestQRCodeGeneration() {
-            addLog('Solicitando QR al backend...', 'info');
-            document.getElementById('generateQRBtn').disabled = true;
-            document.getElementById('generateQRBtn').textContent = 'Generando...';
-            document.getElementById('qrCode').innerHTML = '<p>Esperando QR del backend...</p>';
-            document.getElementById('statusIndicator').className = 'status-indicator status-connecting';
-            document.getElementById('connectionStatus').textContent = 'Solicitando QR...';
-            sendToBackend('generate_qr_request');
-        }
-
-        function requestLogout() {
-            if (confirm('¿Estás seguro de que quieres desconectar tu sesión de WhatsApp? Deberás escanear el QR de nuevo.')) {
-                addLog('Solicitando desconexión de WhatsApp al backend...', 'info');
-                sendToBackend('reset_baileys_request');
-                document.getElementById('logoutBtn').disabled = true;
-            }
-        }
-
-
-        // --- Sending Logic ---
-        function requestStartSending() {
-            if (!isWhatsAppConnected) {
-                alert('WhatsApp no está conectado. Por favor, ve al Paso 3 y conecta.');
-                addLog('Intento de envío fallido: WhatsApp no conectado.', 'error');
+        bulkSendForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (a_excelContacts.length === 0) {
+                showMessage('No hay contactos cargados. Por favor, sube un archivo Excel primero.', 'error');
                 return;
             }
-            if (contacts.length === 0) {
-                alert('No hay contactos cargados para enviar.');
-                addLog('Intento de envío fallido: No hay contactos.', 'error');
+            if (!messageTemplateTextarea.value.trim()) {
+                showMessage('El mensaje no puede estar vacío.', 'error');
                 return;
             }
-            const messageText = document.getElementById('messageText').value.trim();
-            if (!messageText) {
-                alert('El mensaje no puede estar vacío.');
-                addLog('Intento de envío fallido: Mensaje vacío.', 'error');
-                return;
-            }
-
-            addLog('Solicitando inicio de envío al backend...', 'info');
-            currentProcessingIndex = 0;
-            sentSuccessfullyCount = 0;
-            failedToSendCount = 0;
-            contacts.forEach(c => { 
-                c.status = 'Pendiente';
-                c.error = null;
-            });
-            updateStats();
 
             const payload = {
-                contacts: contacts, 
-                messageTemplate: messageText,
-                intervalSeconds: parseInt(document.getElementById('messageInterval').value),
-                batchSize: parseInt(document.getElementById('batchSize').value)
+                contacts: a_excelContacts,
+                messageTemplate: messageTemplateTextarea.value,
+                delay: parseInt(delayInput.value, 10),
+                mediaUrl: mediaUrlInput.value || undefined,
+                mediaType: mediaUrlInput.value ? mediaTypeSelect.value : undefined,
+                scheduledTime: scheduledTimeInput.value || undefined
             };
-            sendToBackend('start_sending_request', payload);
-        }
 
-        function requestPauseSending() {
-            if (!isSendingActive) return;
-            
-            if (isSendingPaused) { 
-                addLog('Solicitando reanudar envío al backend...', 'info');
-                sendToBackend('resume_sending_request');
-            } else { 
-                addLog('Solicitando pausar envío al backend...', 'info');
-                sendToBackend('pause_sending_request');
+            startBulkSendButton.disabled = true;
+            startBulkSendButton.textContent = 'Iniciando...';
+
+            try {
+                const response = await fetch('/api/bulk-send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(result.message || 'Proceso iniciado/programado.', 'success');
+                    a_currentProcessId = result.processId;
+                    currentProcessIdSpan.textContent = a_currentProcessId;
+                    processStatusTextP.textContent = payload.scheduledTime ? 'Programado' : 'Iniciado';
+                    updateProcessSpecificControls(payload.scheduledTime ? 'scheduled' : 'running');
+                    // El progreso se actualizará vía WebSocket
+                } else {
+                    showMessage(result.error || 'Error al iniciar el envío.', 'error');
+                    startBulkSendButton.disabled = false; // Permitir reintentar si falla el inicio
+                }
+            } catch (error) {
+                console.error('Error iniciando envío masivo:', error);
+                showMessage('Error de red al iniciar el envío.', 'error');
+                startBulkSendButton.disabled = false;
+            } finally {
+                 // No se cambia el texto del botón aquí, se gestiona por estado
             }
+        });
+
+        function updateProcessUI(processData) {
+            if (!a_currentProcessId || a_currentProcessId === processData.id) { // Actualizar UI principal si es el proceso actual o el único
+                a_currentProcessId = processData.id;
+                currentProcessIdSpan.textContent = processData.id;
+                processStatusTextP.textContent = `Estado: ${processData.status}`;
+                
+                const progress = processData.progress || 0;
+                progressBar.style.width = `${progress}%`;
+                progressBar.textContent = `${progress}%`;
+                
+                progressTextP.textContent = `Enviados: ${processData.currentIndex || 0}/${processData.totalCount || 0} | Exitosos: ${processData.successCount || 0} | Fallidos: ${processData.failureCount || 0}`;
+                updateProcessSpecificControls(processData.status);
+            }
+            // Actualizar la lista de procesos también
+            fetchProcesses();
         }
 
-        function requestStopSending() {
-            if (!isSendingActive) return;
-            if (confirm('¿Estás seguro de que quieres detener el envío actual?')) {
-                addLog('Solicitando detener envío al backend...', 'info');
-                sendToBackend('stop_sending_request');
+        function updateProcessSpecificControls(status) {
+            startBulkSendButton.textContent = 'Iniciar Envío Masivo'; // Reset
+            if (status === 'running') {
+                pauseButton.disabled = false;
+                resumeButton.disabled = true;
+                stopButton.disabled = false;
+                startBulkSendButton.disabled = true;
+            } else if (status === 'paused') {
+                pauseButton.disabled = true;
+                resumeButton.disabled = false;
+                stopButton.disabled = false;
+                startBulkSendButton.disabled = true;
+            } else if (status === 'scheduled') {
+                pauseButton.disabled = true;
+                resumeButton.disabled = true;
+                stopButton.disabled = false; // Permitir cancelar un programado
+                startBulkSendButton.disabled = true;
+            } else { // completed, failed, stopped, pending
+                pauseButton.disabled = true;
+                resumeButton.disabled = true;
+                stopButton.disabled = true;
+                startBulkSendButton.disabled = (a_excelContacts.length === 0); // Habilitar si hay contactos
+                if (status === 'completed' || status === 'stopped' || status === 'failed') {
+                    a_currentProcessId = null; // Limpiar para permitir nuevo envío en UI principal
+                }
             }
         }
         
-        function updateSendingUI() {
-            const startBtn = document.getElementById('startBtn');
-            const pauseBtn = document.getElementById('pauseBtn');
-            const stopBtn = document.getElementById('stopBtn');
-
-            startBtn.disabled = isSendingActive;
-            pauseBtn.disabled = !isSendingActive;
-            stopBtn.disabled = !isSendingActive;
-
-            if (isSendingActive) {
-                startBtn.innerHTML = '⏳ Enviando...';
-                if (isSendingPaused) {
-                    pauseBtn.innerHTML = '▶️ Reanudar';
-                    pauseBtn.classList.remove('btn-warning');
-                    pauseBtn.classList.add('btn-info'); // Cambiar a azul para reanudar
+        async function controlProcess(id, action) {
+            if (!id) {
+                showMessage('No hay un proceso activo para controlar.', 'error');
+                return;
+            }
+            try {
+                const response = await fetch(`/api/process/${id}/${action}`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(`Proceso ${id} ${action} exitoso.`, 'success');
+                    // La UI se actualizará vía WebSocket 'process_update'
                 } else {
-                    pauseBtn.innerHTML = '⏸️ Pausar';
-                    pauseBtn.classList.add('btn-warning');
-                    pauseBtn.classList.remove('btn-info');
+                    showMessage(`Error al ${action} el proceso ${id}: ${result.error || 'Error desconocido'}`, 'error');
                 }
-            } else {
-                startBtn.innerHTML = '▶️ Iniciar Envío';
-                pauseBtn.innerHTML = '⏸️ Pausar';
-                pauseBtn.classList.add('btn-warning');
-                pauseBtn.classList.remove('btn-info');
-
+            } catch (error) {
+                console.error(`Error en ${action} proceso:`, error);
+                showMessage(`Error de red al ${action} el proceso.`, 'error');
             }
         }
 
-        function updateStats() {
-            document.getElementById('sentCount').textContent = sentSuccessfullyCount;
-            document.getElementById('failedCount').textContent = failedToSendCount;
-            const remaining = contacts.length - currentProcessingIndex;
-            document.getElementById('remainingCount').textContent = Math.max(0, remaining);
-            
-            const progress = contacts.length > 0 ? (currentProcessingIndex / contacts.length) * 100 : 0;
-            document.getElementById('progressFill').style.width = progress + '%';
-            
-            if (currentProcessingIndex > 0 && isSendingActive && !isSendingPaused && remaining > 0) {
-                const interval = parseInt(document.getElementById('messageInterval').value) || 5; 
-                const batchSize = parseInt(document.getElementById('batchSize').value) || 20; 
-                const numBatchesRemaining = Math.max(0, Math.ceil(remaining / batchSize) -1) ; // -1 porque el lote actual no causa pausa aun
-                const pauseTimeForBatches = numBatchesRemaining * 30; // 30s de pausa por lote
-
-                const estimatedSeconds = (remaining * interval) + pauseTimeForBatches;
-                const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
-                document.getElementById('estimatedTime').textContent = estimatedMinutes + ' min';
-            } else if (!isSendingActive && currentProcessingIndex > 0 && currentProcessingIndex === contacts.length) {
-                 document.getElementById('estimatedTime').textContent = 'Finalizado';
-            }
-            else {
-                document.getElementById('estimatedTime').textContent = '--';
-            }
-        }
-
-        function addLog(message, type = 'default') { 
-            const logContainer = document.getElementById('logContainer');
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            if (type !== 'default') {
-                logEntry.classList.add(type);
-            }
-            logEntry.textContent = `[${timestamp}] ${message}`;
-            
-            logContainer.appendChild(logEntry);
-            logContainer.scrollTop = logContainer.scrollHeight; 
-            
-            if (logContainer.children.length > 200) { 
-                logContainer.removeChild(logContainer.firstChild);
-            }
-        }
-
-        function resetProcess() {
-            if (isSendingActive && !confirm('Hay un envío en progreso. ¿Estás seguro de que quieres reiniciar todo el proceso? Esto detendrá el envío actual y desconectará WhatsApp.')) {
-                return;
-            }
-            
-            addLog('🔄 Reiniciando proceso completo...', 'info');
-            if (isWhatsAppConnected) { // Solo enviar logout si estaba conectado
-                sendToBackend('reset_baileys_request'); 
-            }
-
-            contacts = [];
-            // isWhatsAppConnected se actualizará por el backend
-            // isBackendSocketConnected no se resetea aquí, es el estado del socket
-            isSendingActive = false;
-            isSendingPaused = false;
-            currentProcessingIndex = 0;
-            sentSuccessfullyCount = 0;
-            failedToSendCount = 0;
-            
-            document.getElementById('fileInput').value = ''; 
-            document.getElementById('fileInfo').style.display = 'none';
-            document.getElementById('contactPreview').innerHTML = '';
-            document.getElementById('messageText').value = '';
-            updateMessagePreview();
-            
-            // El estado de QR y conexión será manejado por los mensajes del WebSocket
-            if (isBackendSocketConnected) {
-                document.getElementById('qrCode').innerHTML = '<p>Haz clic en "Solicitar Nuevo QR" para conectar tu WhatsApp.</p>';
-            } else {
-                document.getElementById('qrCode').innerHTML = '<p style="color:orange;">Desconectado del servidor. Intentando reconectar...</p>';
-            }
-            
-            updateUIAfterQRStatus();
-            updateSendingUI();
-            updateStats();
-            
-            document.getElementById('logContainer').innerHTML = '<div class="log-entry">Sistema reiniciado - Esperando comandos...</div>';
-            
-            document.querySelectorAll('.step-item').forEach(item => item.classList.remove('completed'));
-            goToStep(1); 
-        }
-
-        function exportReport() {
-            if (contacts.length === 0) {
-                alert("No hay datos de contactos para exportar.");
-                addLog('Intento de exportación fallido: No hay contactos.', 'warning');
-                return;
-            }
-
-            addLog('📊 Preparando reporte XLSX...', 'info');
-
-            const reportDetails = contacts.map(contact => ({
-                'Nombre Contacto': contact.name,
-                'Número Enviado': `+${contact.number}`, 
-                'Fila Original Excel': contact.originalRow,
-                'Estado Envío': contact.status || 'Pendiente',
-                'Error (si falló)': contact.error || ''
-            }));
-
-            const wsDetails = XLSX.utils.json_to_sheet(reportDetails);
-            wsDetails['!cols'] = [
-                { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 30 } 
-            ];
-
-            const summaryData = [
-                { "Métrica": "Total Contactos Cargados", "Valor": contacts.length },
-                { "Métrica": "Total Mensajes Procesados", "Valor": currentProcessingIndex },
-                { "Métrica": "Enviados Exitosamente", "Valor": sentSuccessfullyCount },
-                { "Métrica": "Fallidos", "Valor": failedToSendCount },
-                { "Métrica": "Pendientes", "Valor": Math.max(0, contacts.length - currentProcessingIndex) },
-                { "Métrica": "Tasa de Éxito (s/procesados)", "Valor": currentProcessingIndex > 0 ? `${((sentSuccessfullyCount / currentProcessingIndex) * 100).toFixed(2)}%` : "N/A" },
-                { "Métrica": "Fecha del Reporte", "Valor": new Date().toLocaleString() }
-            ];
-            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-            wsSummary['!cols'] = [{ wch: 40 }, { wch: 20 }];
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, wsDetails, "Detalle Envíos");
-            XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen Envío");
-
-            const fileName = `Reporte_WhatsAppSender_${new Date().toISOString().split('T')[0].replace(/-/g,'')}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-            
-            addLog(`📊 Reporte XLSX "${fileName}" exportado.`, 'info');
-        }
-
-        // --- Step Navigation ---
-        function nextStep(step) {
-            if (validateCurrentStep()) {
-                goToStep(step);
-            }
-        }
-
-        function prevStep(step) {
-            goToStep(step);
-        }
-
-        function goToStep(step) {
-            document.querySelectorAll('.step-panel').forEach(panel => panel.classList.remove('active'));
-            document.getElementById(`step-${step}`).classList.add('active');
-            
-            document.querySelectorAll('.step-item').forEach(item => item.classList.remove('active'));
-            document.querySelector(`.step-item[data-step="${step}"]`).classList.add('active');
-            
-            currentStep = step;
-            if (step === 3) { // Al ir al paso 3, asegurar que los botones de QR estén en estado correcto
-                updateUIAfterQRStatus();
-            }
-            if (step === 4) { 
-                updateSendingUI();
-                updateStats();
-            }
-        }
-
-        function markStepCompleted(step) {
-            document.querySelector(`.step-item[data-step="${step}"]`).classList.add('completed');
-        }
-
-        function validateCurrentStep() {
-            switch (currentStep) {
-                case 1:
-                    if (contacts.length === 0) {
-                        alert('Debes cargar un archivo Excel con contactos válidos.');
-                        addLog('Validación Paso 1 fallida: No hay contactos.', 'warning');
-                        return false;
-                    }
-                    markStepCompleted(1); 
-                    break;
-                case 2:
-                    const message = document.getElementById('messageText').value.trim();
-                    if (!message) {
-                        alert('El mensaje a enviar no puede estar vacío.');
-                        addLog('Validación Paso 2 fallida: Mensaje vacío.', 'warning');
-                        return false;
-                    }
-                    markStepCompleted(2);
-                    break;
-                case 3:
-                    if (!isWhatsAppConnected) {
-                        alert('Debes conectar WhatsApp escaneando el código QR generado.');
-                        addLog('Validación Paso 3 fallida: WhatsApp no conectado.', 'warning');
-                        return false;
-                    }
-                    // markStepCompleted(3) se hace desde handleWebSocketMessage cuando se confirma la conexión
-                    break;
-            }
-            return true;
-        }
-
-        // --- Otros ---
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().then(permission => {
-                if (permission === 'granted') addLog('Permiso de notificaciones concedido.', 'info');
-                else addLog('Permiso de notificaciones denegado.', 'warning');
-            });
-        }
-
-        window.addEventListener('beforeunload', function(e) {
-            if (isSendingActive) {
-                const confirmationMessage = 'Hay un envío en progreso. ¿Estás seguro de que quieres salir? El envío se detendrá.';
-                e.returnValue = confirmationMessage; 
-                return confirmationMessage;       
+        pauseButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'pause'));
+        resumeButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'resume'));
+        stopButton.addEventListener('click', () => {
+            if (confirm('¿Estás seguro de que quieres detener este proceso?')) {
+                controlProcess(a_currentProcessId, 'stop');
             }
         });
+
+        // Tabs
+        function openTab(evt, tabName) {
+            let i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tab-button");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+
+            if (tabName === 'statusTab') fetchOverallStatus();
+            if (tabName === 'processesTab') fetchProcesses();
+        }
+
+        async function fetchOverallStatus() {
+            try {
+                overallStatusText.textContent = 'Actualizando...';
+                const response = await fetch('/api/status');
+                const result = await response.json();
+                if (result.success) {
+                    overallStatusText.textContent = JSON.stringify(result.data, null, 2);
+                } else {
+                    overallStatusText.textContent = `Error: ${result.error || 'No se pudo cargar el estado.'}`;
+                }
+            } catch (error) {
+                console.error('Error fetching overall status:', error);
+                overallStatusText.textContent = 'Error de red al cargar el estado.';
+            }
+        }
+        refreshOverallStatusButton.addEventListener('click', fetchOverallStatus);
+
+        async function fetchProcesses() {
+            try {
+                const response = await fetch('/api/processes'); // Asumiendo que este endpoint devuelve lista de procesos, no solo stats.
+                                                              // Si solo devuelve stats, necesitarás otro endpoint o modificar este.
+                                                              // Por ahora, este endpoint devuelve stats según tu server.js.
+                                                              // Para listar procesos individuales con controles, necesitarías un endpoint
+                                                              // que devuelva algo como `bulkManager.processes` (un Map convertido a Array).
+                                                              // Vamos a simular con las stats por ahora.
+                const result = await response.json();
+                processesListUl.innerHTML = ''; // Clear list
+
+                if (result.success && result.data) { // result.data son las stats aquí
+                    const stats = result.data;
+                    for (const statusKey in stats) {
+                        if (statusKey !== 'total' && stats[statusKey] > 0) {
+                           const li = document.createElement('li');
+                           li.textContent = `Procesos ${statusKey}: ${stats[statusKey]}`;
+                           processesListUl.appendChild(li);
+                        }
+                    }
+                    if (processesListUl.children.length === 0) {
+                         processesListUl.innerHTML = '<li>No hay procesos activos o registrados.</li>';
+                    }
+                     // Aquí iría la lógica para listar procesos individuales si el endpoint lo soportara
+                     // Por ejemplo, si /api/processes devolviera un array de objetos de proceso:
+                     /*
+                     if (Array.isArray(result.data.list)) { // Suponiendo que result.data.list existe
+                        result.data.list.forEach(proc => {
+                            const li = document.createElement('li');
+                            const detailsDiv = document.createElement('div');
+                            detailsDiv.className = 'details';
+                            detailsDiv.innerHTML = `
+                                <strong>ID:</strong> ${proc.id}<br>
+                                <strong>Estado:</strong> ${proc.status}<br>
+                                <strong>Progreso:</strong> ${proc.currentIndex || 0}/${proc.totalCount || 0} (${Math.round(((proc.currentIndex || 0) / (proc.totalCount || 1)) * 100)}%)
+                            `;
+                            const actionsDiv = document.createElement('div');
+                            actionsDiv.className = 'actions';
+
+                            if (proc.status === 'running') {
+                                const pBtn = document.createElement('button');
+                                pBtn.textContent = 'Pausar';
+                                pBtn.onclick = () => controlProcess(proc.id, 'pause');
+                                actionsDiv.appendChild(pBtn);
+                            }
+                            if (proc.status === 'paused') {
+                                const rBtn = document.createElement('button');
+                                rBtn.textContent = 'Reanudar';
+                                rBtn.onclick = () => controlProcess(proc.id, 'resume');
+                                actionsDiv.appendChild(rBtn);
+                            }
+                            if (proc.status === 'running' || proc.status === 'paused' || proc.status === 'scheduled') {
+                                const sBtn = document.createElement('button');
+                                sBtn.textContent = 'Detener';
+                                sBtn.onclick = () => { if(confirm('Seguro?')) controlProcess(proc.id, 'stop'); };
+                                actionsDiv.appendChild(sBtn);
+                            }
+                            li.appendChild(detailsDiv);
+                            li.appendChild(actionsDiv);
+                            processesListUl.appendChild(li);
+                        });
+                     }
+                     */
+
+
+                } else {
+                    processesListUl.innerHTML = `<li>Error: ${result.error || 'No se pudo cargar la lista de procesos.'}</li>`;
+                }
+            } catch (error) {
+                console.error('Error fetching processes list:', error);
+                processesListUl.innerHTML = '<li>Error de red al cargar la lista de procesos.</li>';
+            }
+        }
+        refreshProcessesListButton.addEventListener('click', fetchProcesses);
+
+
+        // Inicializar conexión WebSocket al cargar la página
+        connectWebSocket();
+        fetchOverallStatus(); // Cargar estado inicial
+        fetchProcesses(); // Cargar lista de procesos inicial
     </script>
 </body>
 </html>

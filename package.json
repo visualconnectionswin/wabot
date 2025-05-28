@@ -1,28 +1,466 @@
-{
-  "name": "wabot",
-  "version": "1.0.0",
-  "description": "WhatsApp Sender Pro con Baileys y WebSockets",
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+import time
+import os
+import traceback
+
+# --- Configuration ---
+NUEVO_SEGUIMIENTO = 'https://appwinforce.win.pe/nuevoSeguimiento'
+LOGIN_PATH = '/login'
+DOCUMENTO = '204124111' # Cambia esto por el documento que deseas buscar (DNI, CE o RUC)
+COOKIE = {
+    'name': 'PHPSESSID',
+    'value': '764e90891cc71bce970094b6c047e914', # ¡¡ASEGÚRATE DE QUE ESTA COOKIE SEA VÁLIDA Y RECIENTE!!
+    'domain': 'appwinforce.win.pe',
+    'path': '/',
+    'secure': False,
+    'httpOnly': False
+}{
+  "name": "whatsapp-bulk-sender-pro",
+  "version": "2.0.0",
+  "description": "Herramienta profesional para envío masivo de WhatsApp usando BuilderBot y Baileys con interfaz web avanzada",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon server.js",
+    "build": "npm install",
+    "clean": "rm -rf node_modules package-lock.json",
+    "reset-sessions": "rm -rf baileys_auth_info/* bot.qr.png",
+    "logs": "tail -f logs/app.log"
   },
   "keywords": [
     "whatsapp",
     "baileys",
-    "websocket",
-    "sender"
+    "builderbot",
+    "excel",
+    "nodejs",
+    "chatbot",
+    "bulk-sender",
+    "leifer-mendez"
   ],
-  "author": "newt0m",
+  "author": "Your Name",
   "license": "MIT",
   "dependencies": {
+    "@builderbot/bot": "^1.8.5",
+    "@builderbot/provider-baileys": "^1.8.5",
+    "@builderbot/database-json": "^1.8.5",
     "@whiskeysockets/baileys": "^6.7.5",
-    "express": "^4.19.2",
-    "ws": "^8.17.1",
-    "@hapi/boom": "^10.0.1",
-    "pino": "^8.21.0"
+    "express": "^4.18.2",
+    "ws": "^8.16.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5",
+    "qrcode": "^1.5.3",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0",
+    "joi": "^17.11.0",
+    "rate-limiter-flexible": "^4.0.1",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "moment-timezone": "^0.5.43",
+    "file-type": "^19.0.0",
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "@types/node": "^20.10.0"
   },
   "engines": {
-    "node": ">=18.0.0"
-  }
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/whatsapp-bulk-sender-pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/whatsapp-bulk-sender-pro/issues"
+  },
+  "homepage": "https://github.com/your-username/whatsapp-bulk-sender-pro#readme"
 }
+
+# --- Validación de documento antes de iniciar navegador ---
+doc_len = len(DOCUMENTO)
+if doc_len not in (8, 9, 11):
+    print(f"Documento inválido: '{DOCUMENTO}' (longitud {doc_len}). Solo se aceptan documentos de 8 (DNI), 9 (CE) o 11 (RUC) caracteres.")
+    exit(1)
+
+# --- Setup Chrome options ---
+chrome_options = Options()
+#chrome_options.add_argument('--headless=new')
+chrome_options.add_argument('--no-sandbox')
+chrome_options.add_argument('--disable-dev-shm-usage')
+chrome_options.add_argument('--disable-gpu')
+chrome_options.add_argument('--disable-web-security')
+chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+chrome_options.add_argument('--window-size=1920,1080')
+chrome_options.add_argument('--ignore-ssl-errors=yes')
+chrome_options.add_argument('--ignore-certificate-errors')
+chrome_options.add_argument('--allow-running-insecure-content')
+chrome_options.add_argument('--disable-extensions')
+chrome_options.add_argument('--disable-background-timer-throttling')
+chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+chrome_options.add_argument('--disable-renderer-backgrounding')
+chrome_options.add_argument('--disable-background-networking')
+chrome_options.add_argument('--log-level=3')
+chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+chrome_options.add_experimental_option('useAutomationExtension', False)
+chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+driver = None 
+
+try:
+    driver = webdriver.Chrome(options=chrome_options)
+    wait = WebDriverWait(driver, 25) # Wait general
+    
+    print("Iniciando navegador en modo headless...")
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    js_file_path = os.path.join(script_dir, 'inject.js')
+    
+    captures_dir = os.path.join(script_dir, "capturas_score")
+    if not os.path.exists(captures_dir):
+        os.makedirs(captures_dir)
+        print(f"Directorio de capturas creado en: {captures_dir}")
+    
+    print(f"Navegando a: {NUEVO_SEGUIMIENTO}")
+    driver.get(NUEVO_SEGUIMIENTO)
+    # Espera mínima solo si es necesario
+
+    if LOGIN_PATH in driver.current_url:
+        print("Detectado redirect a login, agregando cookie...")
+        driver.delete_all_cookies()
+        driver.add_cookie(COOKIE)
+        print(f"Navegando de nuevo a: {NUEVO_SEGUIMIENTO} con cookie.")
+        driver.get(NUEVO_SEGUIMIENTO)
+        # Espera mínima tras login
+
+    # --- Captura y diagnóstico PRE-JS ---
+    # (Eliminado: no se toma captura antes de ejecutar inject.js)
+    try:
+        WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.ID, 'documento_identidad')))
+        print("Diagnóstico PRE-JS: 'documento_identidad' PRESENTE en el DOM.")
+    except TimeoutException:
+        print("Diagnóstico PRE-JS: 'documento_identidad' NO presente en el DOM (en 3s).")
+    except Exception as e_diag:
+        print(f"Diagnóstico PRE-JS: Error verificando 'documento_identidad': {e_diag}")
+
+    # Ejecución del JS principal (inyectado por el usuario)
+    if os.path.exists(js_file_path):
+        with open(js_file_path, 'r', encoding='utf-8') as f:
+            JS_SCRIPT = f.read()
+        print("Ejecutando script JavaScript principal (inject.js)...")
+        driver.execute_script(JS_SCRIPT)
+        print("Script JS principal ejecutado.")
+        # Espera mínima tras JS
+    else:
+        print("Advertencia: archivo inject.js no encontrado.")
+        JS_SCRIPT = ""
+
+    # --- Captura y diagnóstico POST-JS ---
+    # (Eliminado: no se toma captura después de ejecutar inject.js)
+    try:
+        WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.ID, 'documento_identidad')))
+        print("Diagnóstico POST-JS: 'documento_identidad' PRESENTE en el DOM.")
+    except TimeoutException:
+        print("Diagnóstico POST-JS: 'documento_identidad' NO presente en el DOM (en 3s).")
+    except Exception as e_diag_post:
+        print(f"Diagnóstico POST-JS: Error verificando 'documento_identidad': {e_diag_post}")
+
+    # --- Python ingresa el documento y realiza la búsqueda ---
+    print("Intentando localizar y rellenar el campo 'documento_identidad'...")
+    # Usar un WebDriverWait específico y más largo para este elemento crucial.
+    input_el_wait = WebDriverWait(driver, 30) 
+    
+    try:
+        print("Esperando que 'documento_identidad' sea VISIBLE...")
+        input_el_visible = input_el_wait.until(EC.visibility_of_element_located((By.ID, 'documento_identidad')))
+        print("'documento_identidad' es VISIBLE.")
+        
+        print("Esperando que 'documento_identidad' sea CLICKEABLE (interactuable)...")
+        input_el = input_el_wait.until(EC.element_to_be_clickable((By.ID, 'documento_identidad')))
+        print("'documento_identidad' es CLICKEABLE.")
+        
+        # --- INICIO DE MEJORA: Selección de tipo de documento según longitud (ANTES de ingresar el documento) ---
+        doc_len = len(DOCUMENTO)
+        expected_tipo_doc_text = None
+        tipo_doc_value_for_js = None
+        if doc_len == 8:
+            expected_tipo_doc_text = 'DNI'
+            tipo_doc_value_for_js = '1'
+        elif doc_len == 9:
+            expected_tipo_doc_text = 'CARNET DE EXTRANJERIA'
+            tipo_doc_value_for_js = '3'
+        elif doc_len == 11:
+            expected_tipo_doc_text = 'RUC'
+            tipo_doc_value_for_js = '6'
+
+        if expected_tipo_doc_text:
+            print(f"Forzando tipo de documento a '{expected_tipo_doc_text}' (valor '{tipo_doc_value_for_js}')...")
+            script_set_tipo_doc = f"""
+                var selectElement = document.getElementById('tipo_doc');
+                if (selectElement) {{
+                    selectElement.value = '{tipo_doc_value_for_js}';
+                    var event = new Event('change', {{ bubbles: true }});
+                    selectElement.dispatchEvent(event);
+                    return true;
+                }} else {{
+                    return false;
+                }}
+            """
+            set_success = driver.execute_script(script_set_tipo_doc)
+            if set_success:
+                print(f"Tipo de documento forzado a valor '{tipo_doc_value_for_js}' mediante JS.")
+            else:
+                print("Error: No se pudo forzar el tipo de documento. El elemento <select id='tipo_doc'> no fue encontrado por el script JS.")
+        else:
+            print(f"Advertencia: Longitud de documento '{DOCUMENTO}' ({doc_len}) no corresponde a DNI, CE o RUC. No se realizará selección automática de tipo.")
+        # --- FIN DE MEJORA ---
+
+        # --- Esperar a que la máscara del campo permita la longitud correcta ---
+        print(f"Esperando que el campo permita ingresar {doc_len} caracteres...")
+        def campo_permite_longitud(driver):
+            el = driver.find_element(By.ID, 'documento_identidad')
+            maxlength = el.get_attribute('maxlength')
+            if maxlength is not None and maxlength.isdigit():
+                return int(maxlength) >= doc_len
+            # Si no hay maxlength, probar ingresando el valor y ver si lo acepta
+            el.clear()
+            el.send_keys(DOCUMENTO)
+            val = el.get_attribute('value')
+            el.clear()
+            return len(val) == doc_len
+        try:
+            WebDriverWait(driver, 5).until(campo_permite_longitud)
+            print(f"El campo ya permite {doc_len} caracteres.")
+        except Exception:
+            print(f"Advertencia: El campo podría no aceptar {doc_len} caracteres. Se intentará de todas formas.")
+
+        # --- Ingreso del documento: optimizado, sin tipificado lento ---
+        input_el.click()
+        time.sleep(0.1)
+        input_el.clear()
+        input_el.send_keys(Keys.CONTROL, 'a')
+        input_el.send_keys(Keys.DELETE)
+        time.sleep(0.05)
+        input_el.send_keys(DOCUMENTO)
+        time.sleep(0.1)
+        valor_actual = input_el.get_attribute('value')
+        if valor_actual == DOCUMENTO:
+            print(f"Documento {DOCUMENTO} ingresado correctamente.")
+        else:
+            print(f"Error: El valor en el campo es '{valor_actual}', se esperaba '{DOCUMENTO}'. Abortando búsqueda.")
+            error_capture_path = os.path.join(captures_dir, f"captura_error_documento_no_ingresado.png")
+            try:
+                driver.save_screenshot(error_capture_path)
+                print(f"Captura de error guardada en: {error_capture_path}")
+            except Exception as e:
+                print(f"No se pudo tomar captura del error de ingreso de documento: {e}")
+            raise Exception("No se pudo ingresar correctamente el documento.")
+
+        # --- NUEVO: Simular click en el botón de búsqueda específico (id=search_score_cliente) ---
+        print("Buscando botón de búsqueda con id='search_score_cliente' para hacer click...")
+        try:
+            btn = driver.find_element(By.ID, 'search_score_cliente')
+            # Esperar hasta que esté habilitado (enabled)
+            WebDriverWait(driver, 10).until(lambda d: btn.is_enabled())
+            print("Botón de búsqueda habilitado. Haciendo click...")
+            btn.click()
+        except Exception as e:
+            print(f"No se pudo hacer click en el botón con id='search_score_cliente': {e}. Intentando fallback por Enter.")
+            input_el.send_keys(Keys.ENTER)
+
+    except TimeoutException as e_timeout_input:
+        print(f"TimeoutException al esperar/interactuar con 'documento_identidad': {e_timeout_input.msg if e_timeout_input.msg else 'Timeout genérico'}")
+        page_source_on_error_path = os.path.join(captures_dir, "page_source_on_input_error.html")
+        try:
+            with open(page_source_on_error_path, "w", encoding="utf-8") as f_err:
+                f_err.write(driver.page_source)
+            print(f"Page source en el momento del error guardado en: {page_source_on_error_path}")
+        except Exception as e_save_source:
+            print(f"No se pudo guardar el page source del error: {e_save_source}")
+        raise # Relanzar para que sea capturado por el try/except principal y se genere la captura de error
+
+    # --- INICIO DE LÓGICA DE CAPTURAS Y MONITOREO POST-BÚSQUEDA ---
+    print("Iniciando monitoreo de cambios y aparición del score (hasta 15s)...")
+    cap_count = 0
+    score_text = None
+    popup_text = None
+    last_popup_text = None
+    score_captured = False
+    popup_captured = False
+    popup_selectors = [
+        '.swal2-popup', '.modal-content', '.toast-message', '.alert-danger', '#mensaje_error', '.error-message',
+        '[role="dialog"]', '[aria-modal="true"]', '.modal', '.ant-modal', '.MuiDialog-root', '.v-dialog',
+        '.cdk-overlay-pane', '.overlay', '.popup', '.dialog', '[data-testid*="modal"], [data-testid*="popup"]',
+        '[style*="z-index"]', '[class*="popup"]', '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]'
+    ]
+
+    try:
+        WebDriverWait(driver, 8).until(lambda d: d.find_element(By.ID, 'estamos_verificando').is_displayed() or any(
+            e.is_displayed() and e.text.strip() for sel in popup_selectors for e in d.find_elements(By.CSS_SELECTOR, sel)
+        ))
+    except Exception:
+        pass
+
+    for i in range(10):
+        time.sleep(1)
+        iteration_message = f"Iteración {i+1}/10: "
+        score_detected_this_iter = False
+        popup_detected_this_iter = False  # Siempre inicializar en cada iteración
+
+        # --- NUEVO: Contador de iteraciones sin 'estamos_verificando' visible ---
+        if 'no_visible_count' not in locals():
+            no_visible_count = 0
+
+        # Score: solo una captura la primera vez que aparece
+        try:
+            score_element = driver.find_element(By.ID, 'estamos_verificando')
+            if score_element.is_displayed():
+                no_visible_count = 0  # Reset si se vuelve visible
+                current_score_text = score_element.text.strip()
+                if 'score:' in current_score_text.lower():
+                    iteration_message += "Score detectado. "
+                    if not score_captured:
+                        score_text = current_score_text
+                        img_path_score = os.path.join(captures_dir, f"captura_score_detectado.png")
+                        try:
+                            driver.save_screenshot(img_path_score)
+                            print(f"Captura de score guardada: {img_path_score}")
+                        except Exception as e:
+                            print(f"Error guardando captura de score: {e}")
+                        score_captured = True
+                    print(f"{iteration_message}Score: {current_score_text}")
+                    score_detected_this_iter = True
+                else:
+                    iteration_message += f"Elemento 'estamos_verificando' visible pero sin 'score:'. Texto: '{current_score_text[:50]}...'. "
+            else:
+                no_visible_count += 1
+                iteration_message += "Elemento 'estamos_verificando' no visible. "
+        except (NoSuchElementException, StaleElementReferenceException):
+            no_visible_count += 1
+            iteration_message += "Elemento 'estamos_verificando' no encontrado. "
+
+        # --- Corte anticipado si no_visible_count llega a 5 ---
+        if no_visible_count >= 5 and not score_captured and not popup_captured:
+            img_path_no_visible = os.path.join(captures_dir, f"captura_no_estamos_verificando.png")
+            try:
+                driver.save_screenshot(img_path_no_visible)
+                print(f"Captura tomada tras 5 iteraciones sin 'estamos_verificando' visible: {img_path_no_visible}")
+            except Exception as e:
+                print(f"Error guardando captura tras 5 iteraciones sin 'estamos_verificando': {e}")
+            print("No se detectó score ni popup bloqueante tras 5 iteraciones sin 'estamos_verificando' visible. Finalizando monitoreo anticipadamente.")
+            break
+
+        # Popup: solo detectar y guardar el texto, NO tomar captura aquí
+        if not popup_captured:
+            bloqueante = False
+            for selector in popup_selectors:
+                try:
+                    elems = driver.find_elements(By.CSS_SELECTOR, selector)
+                    for e_idx, e in enumerate(elems):
+                        if e.is_displayed() and e.text.strip():
+                            detected_popup = e.text.strip()
+                            if detected_popup != last_popup_text:
+                                print(f"[POPUP DETECTADO] Texto: {detected_popup} | Selector: {selector}")
+                                popup_captured = True
+                                popup_text = detected_popup
+                                last_popup_text = detected_popup
+                                # --- DETENER el bucle si el popup es claramente bloqueante o contiene mensaje de error específico ---
+                                bloqueantes = [
+                                    "lo siento", "no cumple", "no se encuentra", "error", "prohibido", "denegado", "no autorizado", "antiguedad menor", "no cumple requisitos comerciales",
+                                    "no se encontró información", "documento es incorrecto"
+                                ]
+                                for palabra in bloqueantes:
+                                    if palabra in detected_popup.lower():
+                                        print("Popup bloqueante detectado, deteniendo monitoreo.")
+                                        img_path_popup = os.path.join(captures_dir, f"captura_popup_bloqueante.png")
+                                        driver.save_screenshot(img_path_popup)
+                                        print(f"Captura de popup bloqueante guardada: {img_path_popup}")
+                                        bloqueante = True
+                                        break
+                                if bloqueante:
+                                    break
+                    if bloqueante:
+                        break
+                except Exception:
+                    continue
+            if bloqueante:
+                popup_detected_this_iter = True
+        else:  # Si ya se capturó un popup principal, se puede seguir logueando otros que aparezcan
+            for selector in popup_selectors:
+                try:
+                    elems = driver.find_elements(By.CSS_SELECTOR, selector)
+                    for e in elems:
+                        if e.is_displayed() and e.text.strip():
+                            detected_popup = e.text.strip()
+                            if detected_popup != last_popup_text:
+                                print(f"[POPUP DETECTADO] (sin nueva captura, ya se capturó uno) Texto: {detected_popup} | Selector: {selector}")
+                                last_popup_text = detected_popup # Actualizar para no loguear el mismo repetidamente
+                except Exception:
+                    continue
+        
+        if iteration_message.strip() != f"Iteración {i+1}/15:":
+             print(iteration_message.strip())
+
+        # Si se detectó el score, salir del bucle inmediatamente
+        if score_detected_this_iter:
+            break
+        # Si se detectó popup bloqueante, salir del bucle inmediatamente
+        if popup_detected_this_iter:
+            break
+    else:
+        # Solo si se llega a la iteración 10 sin break, tomar captura y detener
+        print("No se obtuvo score ni mensaje de error/popup relevante claro durante el monitoreo (10 iteraciones).")
+        captura_final_path = os.path.join(captures_dir, "captura_final_sin_score_ni_popup.png")
+        try:
+            driver.save_screenshot(captura_final_path)
+            print(f"Captura final guardada en: {captura_final_path}")
+        except Exception as e:
+            print(f"No se pudo tomar la captura final: {e}")
+
+    # Mostrar resultado final después del bucle
+    if score_text:
+        print(f"Proceso de monitoreo finalizado. Score obtenido: {score_text}")
+        print(f"Resultado final: Score = {score_text}")
+    elif popup_text: # Si un popup fue capturado y guardado como 'popup_text'
+        print(f"Proceso detenido por popup/mensaje relevante: {popup_text}")
+    else:
+        print("No se obtuvo score ni mensaje de error/popup relevante claro durante el monitoreo.")
+        # --- Captura final si se llega al final sin score ni popup ---
+        captura_final_path = os.path.join(captures_dir, "captura_final_sin_score_ni_popup.png")
+        try:
+            driver.save_screenshot(captura_final_path)
+            print(f"Captura final guardada en: {captura_final_path}")
+        except Exception as e:
+            print(f"No se pudo tomar la captura final: {e}")
+
+
+except Exception as e:
+    print(f"Error CRÍTICO en el proceso: {type(e).__name__} - {str(e) if str(e) else 'Sin mensaje específico'}")
+    traceback.print_exc() 
+    try:
+        if driver: 
+            error_capture_path = os.path.join(captures_dir if 'captures_dir' in locals() else script_dir, "captura_error_critico_final.png")
+            driver.save_screenshot(error_capture_path)
+            print(f"Captura de error guardada en: {error_capture_path}")
+            print(f"URL actual en error: {driver.current_url}")
+            print(f"Título de página en error: {driver.title}")
+    except Exception as e_capture:
+        print(f"No se pudo tomar captura del error crítico: {e_capture}")
+
+finally:
+    try:
+        if driver:
+            driver.quit()
+            print("Navegador cerrado correctamente.")
+    except Exception as e:
+        print(f"Error cerrando navegador: {e}")
