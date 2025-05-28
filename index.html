@@ -194,15 +194,41 @@
             margin-bottom: 10px;
             border-radius: 4px;
             display: flex;
+            flex-wrap: wrap; /* Allow wrapping for smaller screens */
             justify-content: space-between;
             align-items: center;
         }
-        #processesList li .details { flex-grow: 1; }
-        #processesList li .actions button { font-size: 0.8em; padding: 8px 12px; margin-left: 5px; }
+        #processesList li .details {
+             flex-grow: 1;
+             margin-right: 10px; /* Space before actions */
+             min-width: 200px; /* Ensure details have some space */
+        }
+        #processesList li .details span { display: block; font-size: 0.9em; margin-bottom: 3px; }
+        #processesList li .details strong { color: #333; }
+        #processesList li .actions {
+            display: flex;
+            gap: 5px; /* Space between buttons */
+            flex-shrink: 0; /* Prevent actions from shrinking too much */
+        }
+        #processesList li .actions button {
+            font-size: 0.8em;
+            padding: 6px 10px; /* Smaller buttons for the list */
+            margin-top: 0; /* Remove top margin for list buttons */
+            margin-right: 0; /* Remove right margin as gap is used */
+        }
 
         @media (max-width: 768px) {
             .grid-container {
                 grid-template-columns: 1fr;
+            }
+            #processesList li {
+                flex-direction: column; /* Stack details and actions on small screens */
+                align-items: flex-start;
+            }
+            #processesList li .actions {
+                margin-top: 10px; /* Add space when stacked */
+                width: 100%;
+                justify-content: flex-start;
             }
         }
     </style>
@@ -235,11 +261,12 @@
                     </form>
                     <div id="fileInfo" style="display: none;">
                         <h3>Información del Archivo:</h3>
-                        <p>Filas Totales: <span id="totalRows"></span></p>
+                        <p>Filas Totales en Archivo: <span id="totalRowsInFile"></span></p>
+                        <p>Filas Procesadas: <span id="processedRows"></span></p>
                         <p>Contactos Válidos: <span id="validContactsCount"></span></p>
-                        <p>Números Totales: <span id="totalNumbers"></span></p>
-                        <h4>Vista Previa (primeros 5):</h4>
-                        <div id="contactsPreview"></div>
+                        <p>Números Totales en Contactos Válidos: <span id="totalNumbers"></span></p>
+                        <h4>Contactos Cargados (para envío):</h4>
+                        <div id="contactsPreview">Se mostrarán aquí los detalles si el archivo es pequeño, o un resumen.</div>
                     </div>
                 </div>
             </div>
@@ -278,7 +305,7 @@
             </div>
 
             <div class="grid-item process-info">
-                <h2>Progreso del Envío Actual</h2>
+                <h2>Progreso del Envío Actual (Principal)</h2>
                 <p>ID del Proceso: <span id="currentProcessId">-</span></p>
                 <p id="processStatusText">Estado: Esperando inicio</p>
                 <div class="progress-container">
@@ -300,16 +327,19 @@
                 <pre id="overallStatusText">Cargando estado...</pre>
             </div>
         </div>
-        
+
         <div id="processesTab" class="tab-content">
             <h2>Gestión de Procesos de Envío</h2>
             <button id="refreshProcessesListButton">Actualizar Lista</button>
             <ul id="processesList">
                 <!-- Los procesos se listarán aquí -->
             </ul>
+            <div id="processesStats">
+                <!-- Las estadísticas de procesos se mostrarán aquí -->
+            </div>
         </div>
 
-        <div id="messageArea"></div>
+        <div id="messageArea" style="margin-top: 20px;"></div>
 
     </div>
 
@@ -318,8 +348,8 @@
         const wsURL = `${wsProtocol}//${window.location.host}`;
         let ws = null;
 
-        let a_excelContacts = [];
-        let a_currentProcessId = null;
+        let a_excelContacts = []; // Array para almacenar los contactos del Excel procesado
+        let a_currentProcessId = null; // ID del proceso que se está mostrando en la UI principal
 
         // Elementos UI
         const qrCodeImg = document.getElementById('qrCodeImg');
@@ -330,7 +360,9 @@
         const excelFile = document.getElementById('excelFile');
         const uploadButton = document.getElementById('uploadButton');
         const fileInfoDiv = document.getElementById('fileInfo');
-        const totalRowsSpan = document.getElementById('totalRows');
+
+        const totalRowsInFileSpan = document.getElementById('totalRowsInFile');
+        const processedRowsSpan = document.getElementById('processedRows');
         const validContactsCountSpan = document.getElementById('validContactsCount');
         const totalNumbersSpan = document.getElementById('totalNumbers');
         const contactsPreviewDiv = document.getElementById('contactsPreview');
@@ -356,21 +388,29 @@
         const overallStatusArea = document.getElementById('overallStatusArea');
         const overallStatusText = document.getElementById('overallStatusText');
         const refreshOverallStatusButton = document.getElementById('refreshOverallStatusButton');
-        
+
         const processesListUl = document.getElementById('processesList');
+        const processesStatsDiv = document.getElementById('processesStats');
         const refreshProcessesListButton = document.getElementById('refreshProcessesListButton');
 
-        function showMessage(text, type = 'info') {
+        function showMessage(text, type = 'info', duration = 5000) {
             const div = document.createElement('div');
             div.textContent = text;
             div.className = type === 'error' ? 'error-message' : (type === 'success' ? 'success-message' : 'info-message');
-            messageArea.innerHTML = ''; // Limpiar mensajes anteriores
-            messageArea.appendChild(div);
-            setTimeout(() => {
-                if (messageArea.contains(div)) {
-                     messageArea.removeChild(div);
-                }
-            }, 5000);
+
+            // Limpiar mensajes anteriores solo si es un mensaje nuevo (para no borrar confirmaciones importantes rápido)
+            if (messageArea.firstChild && messageArea.firstChild.className.includes('-message')) {
+                 // messageArea.innerHTML = '';
+            }
+            messageArea.appendChild(div); // Agregar el nuevo mensaje
+
+            if(duration > 0) {
+                setTimeout(() => {
+                    if (messageArea.contains(div)) {
+                         messageArea.removeChild(div);
+                    }
+                }, duration);
+            }
         }
 
         function connectWebSocket() {
@@ -384,9 +424,8 @@
             ws.onopen = () => {
                 console.log('WebSocket conectado al servidor.');
                 connectionStatusP.textContent = 'Estado de conexión: Conectado al servidor.';
-                // Solicitar estado inicial de WhatsApp al conectar
                 ws.send(JSON.stringify({ type: 'get_status' }));
-                fetchProcesses(); // Cargar procesos al conectar
+                fetchProcesses();
             };
 
             ws.onmessage = (event) => {
@@ -397,27 +436,35 @@
                     switch (message.type) {
                         case 'qr_update':
                             qrCodeImg.src = message.data || '';
+                            qrCodeImg.style.display = message.data ? 'block' : 'none';
                             if (message.data) {
                                 connectionStatusP.textContent = 'Estado de conexión: Escanee el QR.';
                                 connectionStatusP.className = 'disconnected';
                             } else if (!connectionStatusP.textContent.includes('Autenticado')) {
-                                connectionStatusP.textContent = 'Estado de conexión: QR no disponible, esperando autenticación...';
+                                connectionStatusP.textContent = message.pairingCodeExpected ? 'Esperando código de emparejamiento (ver consola del servidor)...' : 'QR no disponible, esperando autenticación...';
                                 connectionStatusP.className = 'disconnected';
                             }
                             break;
-                        case 'status_update': // Para estado de conexión WhatsApp
+                        case 'status_update':
                             if (message.data.connected) {
                                 connectionStatusP.textContent = `Estado de conexión: Autenticado como ${message.data.user?.name || message.data.user?.id || 'Usuario'}.`;
                                 connectionStatusP.className = 'connected';
-                                qrCodeImg.src = ''; // Limpiar QR si está autenticado
+                                qrCodeImg.src = '';
+                                qrCodeImg.style.display = 'none';
                             } else {
-                                connectionStatusP.textContent = 'Estado de conexión: WhatsApp Desconectado. Solicitando QR...';
+                                connectionStatusP.textContent = `Estado de conexión: WhatsApp Desconectado. ${message.data.error || 'Solicitando QR/Código...'}`;
                                 connectionStatusP.className = 'disconnected';
-                                ws.send(JSON.stringify({ type: 'request_qr' }));
+                                if (!message.data.error?.includes("Pairing Code")) { // Avoid loop if pairing code is expected
+                                    ws.send(JSON.stringify({ type: 'request_qr' }));
+                                }
                             }
                             break;
                         case 'process_update':
                             updateProcessUI(message.data);
+                            // Si la pestaña de procesos está activa, la actualizamos también.
+                            if (document.getElementById('processesTab').classList.contains('active')) {
+                                fetchProcesses();
+                            }
                             break;
                         default:
                             console.log("Mensaje desconocido del WebSocket:", message);
@@ -436,16 +483,15 @@
 
             ws.onclose = (event) => {
                 console.log('WebSocket desconectado:', event.code, event.reason);
-                connectionStatusP.textContent = `Estado de conexión: Desconectado del Servidor (${event.code}).`;
+                connectionStatusP.textContent = `Estado de conexión: Desconectado del Servidor (${event.code}). Reintentando...`;
                 connectionStatusP.className = 'disconnected';
                 disableAllControls();
-                // Intentar reconectar después de un tiempo
                 setTimeout(connectWebSocket, 5000);
             };
         }
-        
+
         function disableAllControls() {
-            uploadButton.disabled = true;
+            // uploadButton.disabled = true; // No deshabilitar, el usuario puede querer cargar otro archivo
             startBulkSendButton.disabled = true;
             pauseButton.disabled = true;
             resumeButton.disabled = true;
@@ -473,6 +519,7 @@
             formData.append('excel', excelFile.files[0]);
             uploadButton.disabled = true;
             uploadButton.textContent = 'Procesando...';
+            startBulkSendButton.disabled = true; // Deshabilitar hasta que se procese
 
             try {
                 const response = await fetch('/api/upload-excel', {
@@ -484,44 +531,42 @@
                 if (result.success && result.data) {
                     showMessage('Archivo procesado exitosamente.', 'success');
                     fileInfoDiv.style.display = 'block';
-                    totalRowsSpan.textContent = result.data.totalRows;
+                    totalRowsInFileSpan.textContent = result.data.totalRowsInFile;
+                    processedRowsSpan.textContent = result.data.processedRows;
                     validContactsCountSpan.textContent = result.data.validContacts;
-                    totalNumbersSpan.textContent = result.data.summary.totalNumbers;
-                    
-                    contactsPreviewDiv.innerHTML = ''; // Limpiar vista previa anterior
-                    result.data.contacts.forEach(contact => {
-                        const p = document.createElement('p');
-                        p.textContent = `Nombre: ${contact.name}, Números: ${contact.numbers.join(', ')}, Fila: ${contact.rowIndex}`;
-                        contactsPreviewDiv.appendChild(p);
-                    });
+                    totalNumbersSpan.textContent = result.data.summary.totalNumbersFound;
 
-                    // Guardar todos los contactos, no solo la vista previa
-                    const fullContactsResponse = await fetch('/api/upload-excel', { // Re-llamada para obtener todos los contactos
-                         method: 'POST',
-                         body: formData // Enviar de nuevo el archivo para obtener todos los datos
-                    });
-                    const fullResult = await fullContactsResponse.json();
-                    if (fullResult.success) {
-                       a_excelContacts = fullResult.data.contacts; // Actualizar con todos los contactos
-                    } else {
-                       a_excelContacts = result.data.contacts; // fallback a los de preview
-                    }
+                    a_excelContacts = result.data.contacts; // Guardar todos los contactos
 
-
+                    contactsPreviewDiv.innerHTML = '';
                     if (a_excelContacts.length > 0) {
-                        startBulkSendButton.disabled = false;
+                        const previewCount = Math.min(5, a_excelContacts.length);
+                        for(let i=0; i < previewCount; i++) {
+                            const contact = a_excelContacts[i];
+                            const p = document.createElement('p');
+                            p.textContent = `Nombre: ${contact.name}, Números: ${contact.numbers.join(', ')}, Fila Excel: ${contact.rowIndex}`;
+                            contactsPreviewDiv.appendChild(p);
+                        }
+                        if(a_excelContacts.length > previewCount) {
+                            const pMore = document.createElement('p');
+                            pMore.textContent = `... y ${a_excelContacts.length - previewCount} más contactos.`;
+                            contactsPreviewDiv.appendChild(pMore);
+                        }
+                        startBulkSendButton.disabled = false; // Habilitar si hay contactos
                     } else {
-                        startBulkSendButton.disabled = true;
+                        contactsPreviewDiv.textContent = 'No se encontraron contactos válidos en el archivo.';
                         showMessage('No se encontraron contactos válidos en el archivo.', 'error');
                     }
                 } else {
                     showMessage(result.error || 'Error al procesar el archivo.', 'error');
-                    startBulkSendButton.disabled = true;
+                    fileInfoDiv.style.display = 'none';
+                    a_excelContacts = [];
                 }
             } catch (error) {
                 console.error('Error subiendo archivo:', error);
                 showMessage('Error de red al subir el archivo.', 'error');
-                startBulkSendButton.disabled = true;
+                fileInfoDiv.style.display = 'none';
+                a_excelContacts = [];
             } finally {
                 uploadButton.disabled = false;
                 uploadButton.textContent = 'Procesar Archivo';
@@ -538,15 +583,24 @@
                 showMessage('El mensaje no puede estar vacío.', 'error');
                 return;
             }
+            if (connectionStatusP.className !== 'connected') {
+                 showMessage('WhatsApp no está conectado. Por favor, autentíquese primero.', 'error');
+                 return;
+            }
+
 
             const payload = {
                 contacts: a_excelContacts,
                 messageTemplate: messageTemplateTextarea.value,
-                delay: parseInt(delayInput.value, 10),
-                mediaUrl: mediaUrlInput.value || undefined,
-                mediaType: mediaUrlInput.value ? mediaTypeSelect.value : undefined,
+                delay: parseInt(delayInput.value, 10) || 3000,
+                mediaUrl: mediaUrlInput.value.trim() || undefined,
+                mediaType: mediaUrlInput.value.trim() ? mediaTypeSelect.value : undefined,
                 scheduledTime: scheduledTimeInput.value || undefined
             };
+            if (payload.scheduledTime && new Date(payload.scheduledTime) <= new Date()) {
+                showMessage('La fecha de programación debe ser en el futuro.', 'error');
+                return;
+            }
 
             startBulkSendButton.disabled = true;
             startBulkSendButton.textContent = 'Iniciando...';
@@ -560,99 +614,119 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    showMessage(result.message || 'Proceso iniciado/programado.', 'success');
-                    a_currentProcessId = result.processId;
+                    showMessage(result.message || `Proceso ${result.processId} iniciado/programado.`, 'success');
+                    a_currentProcessId = result.processId; // Establecer como proceso actual
                     currentProcessIdSpan.textContent = a_currentProcessId;
-                    processStatusTextP.textContent = payload.scheduledTime ? 'Programado' : 'Iniciado';
-                    updateProcessSpecificControls(payload.scheduledTime ? 'scheduled' : 'running');
-                    // El progreso se actualizará vía WebSocket
+                    // La UI se actualizará con el estado real vía WebSocket (process_update)
+                    // así que no forzamos el estado aquí, esperamos el primer broadcast.
                 } else {
                     showMessage(result.error || 'Error al iniciar el envío.', 'error');
-                    startBulkSendButton.disabled = false; // Permitir reintentar si falla el inicio
+                    startBulkSendButton.disabled = (a_excelContacts.length === 0);
+                    startBulkSendButton.textContent = 'Iniciar Envío Masivo';
                 }
             } catch (error) {
                 console.error('Error iniciando envío masivo:', error);
                 showMessage('Error de red al iniciar el envío.', 'error');
-                startBulkSendButton.disabled = false;
-            } finally {
-                 // No se cambia el texto del botón aquí, se gestiona por estado
+                startBulkSendButton.disabled = (a_excelContacts.length === 0);
+                startBulkSendButton.textContent = 'Iniciar Envío Masivo';
             }
         });
 
         function updateProcessUI(processData) {
-            if (!a_currentProcessId || a_currentProcessId === processData.id) { // Actualizar UI principal si es el proceso actual o el único
-                a_currentProcessId = processData.id;
+            // Actualizar la UI principal si el ID del proceso coincide con el proceso actual
+            // O si no hay un proceso actual y este es un nuevo proceso 'running' o 'scheduled'
+            if (processData && (a_currentProcessId === processData.id || (!a_currentProcessId && ['running', 'scheduled', 'pending'].includes(processData.status)))) {
+                if (!a_currentProcessId) a_currentProcessId = processData.id; // Asignar si es el primer proceso activo que vemos
+
                 currentProcessIdSpan.textContent = processData.id;
                 processStatusTextP.textContent = `Estado: ${processData.status}`;
-                
+                if (processData.scheduledTime && (processData.status === 'scheduled' || processData.status === 'pending')) {
+                     processStatusTextP.textContent += ` (Para: ${new Date(processData.scheduledTime).toLocaleString()})`;
+                }
+
+
                 const progress = processData.progress || 0;
                 progressBar.style.width = `${progress}%`;
                 progressBar.textContent = `${progress}%`;
-                
-                progressTextP.textContent = `Enviados: ${processData.currentIndex || 0}/${processData.totalCount || 0} | Exitosos: ${processData.successCount || 0} | Fallidos: ${processData.failureCount || 0}`;
+
+                progressTextP.textContent = `Progreso: ${processData.currentIndex || 0}/${processData.totalCount || 0} | Éxito: ${processData.successCount || 0} | Fallo: ${processData.failureCount || 0}`;
                 updateProcessSpecificControls(processData.status);
             }
-            // Actualizar la lista de procesos también
-            fetchProcesses();
         }
 
         function updateProcessSpecificControls(status) {
-            startBulkSendButton.textContent = 'Iniciar Envío Masivo'; // Reset
-            if (status === 'running') {
+            startBulkSendButton.textContent = 'Iniciar Envío Masivo';
+            const isProcessActiveOnMainUI = !!a_currentProcessId;
+
+            if (status === 'running' && isProcessActiveOnMainUI) {
                 pauseButton.disabled = false;
                 resumeButton.disabled = true;
                 stopButton.disabled = false;
                 startBulkSendButton.disabled = true;
-            } else if (status === 'paused') {
+            } else if (status === 'paused' && isProcessActiveOnMainUI) {
                 pauseButton.disabled = true;
                 resumeButton.disabled = false;
                 stopButton.disabled = false;
                 startBulkSendButton.disabled = true;
-            } else if (status === 'scheduled') {
+            } else if (status === 'scheduled' && isProcessActiveOnMainUI) {
                 pauseButton.disabled = true;
                 resumeButton.disabled = true;
-                stopButton.disabled = false; // Permitir cancelar un programado
+                stopButton.disabled = false; // Permitir cancelar/detener un programado
                 startBulkSendButton.disabled = true;
-            } else { // completed, failed, stopped, pending
+            } else { // completed, failed, stopped, pending (o si no es el proceso de la UI principal)
                 pauseButton.disabled = true;
                 resumeButton.disabled = true;
                 stopButton.disabled = true;
-                startBulkSendButton.disabled = (a_excelContacts.length === 0); // Habilitar si hay contactos
-                if (status === 'completed' || status === 'stopped' || status === 'failed') {
-                    a_currentProcessId = null; // Limpiar para permitir nuevo envío en UI principal
+                startBulkSendButton.disabled = (a_excelContacts.length === 0 || connectionStatusP.className !== 'connected');
+
+                if (['completed', 'failed', 'stopped'].includes(status) && isProcessActiveOnMainUI && a_currentProcessId) {
+                    // Si el proceso actual en la UI principal ha terminado, limpiamos a_currentProcessId
+                    // para permitir que se muestre un nuevo proceso si se inicia.
+                    if (document.getElementById('currentProcessId').textContent === a_currentProcessId) {
+                         a_currentProcessId = null; // Listo para un nuevo proceso en la UI principal
+                         currentProcessIdSpan.textContent = '-';
+                         processStatusTextP.textContent = 'Estado: Esperando inicio';
+                         progressBar.style.width = '0%';
+                         progressBar.textContent = '0%';
+                         progressTextP.textContent = 'Enviados: 0/0 | Exitosos: 0 | Fallidos: 0';
+                    }
                 }
             }
         }
-        
+
         async function controlProcess(id, action) {
             if (!id) {
-                showMessage('No hay un proceso activo para controlar.', 'error');
+                showMessage('No hay un ID de proceso para controlar.', 'error');
                 return;
             }
             try {
                 const response = await fetch(`/api/process/${id}/${action}`, { method: 'POST' });
                 const result = await response.json();
                 if (result.success) {
-                    showMessage(`Proceso ${id} ${action} exitoso.`, 'success');
-                    // La UI se actualizará vía WebSocket 'process_update'
+                    showMessage(`Acción '${action}' enviada para el proceso ${id}. Estado actual: ${result.processStatus || 'actualizando...'}`, 'success');
+                    // La UI se actualizará más completamente vía WebSocket 'process_update'
+                    // pero podemos actualizar el estado local de los botones de este proceso si es el actual
+                    if (id === a_currentProcessId && result.processStatus) {
+                        updateProcessSpecificControls(result.processStatus);
+                    }
+                    fetchProcesses(); // Refrescar la lista de procesos
                 } else {
-                    showMessage(`Error al ${action} el proceso ${id}: ${result.error || 'Error desconocido'}`, 'error');
+                    showMessage(`Error al '${action}' el proceso ${id}: ${result.error || 'Error desconocido'}`, 'error');
                 }
             } catch (error) {
                 console.error(`Error en ${action} proceso:`, error);
-                showMessage(`Error de red al ${action} el proceso.`, 'error');
+                showMessage(`Error de red al '${action}' el proceso.`, 'error');
             }
         }
 
         pauseButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'pause'));
         resumeButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'resume'));
         stopButton.addEventListener('click', () => {
-            if (confirm('¿Estás seguro de que quieres detener este proceso?')) {
+            if (confirm(`¿Estás seguro de que quieres detener el proceso ${a_currentProcessId}?`)) {
                 controlProcess(a_currentProcessId, 'stop');
             }
         });
 
-        // Tabs
         function openTab(evt, tabName) {
             let i, tabcontent, tablinks;
             tabcontent = document.getElementsByClassName("tab-content");
@@ -689,39 +763,50 @@
 
         async function fetchProcesses() {
             try {
-                const response = await fetch('/api/processes'); // Asumiendo que este endpoint devuelve lista de procesos, no solo stats.
-                                                              // Si solo devuelve stats, necesitarás otro endpoint o modificar este.
-                                                              // Por ahora, este endpoint devuelve stats según tu server.js.
-                                                              // Para listar procesos individuales con controles, necesitarías un endpoint
-                                                              // que devuelva algo como `bulkManager.processes` (un Map convertido a Array).
-                                                              // Vamos a simular con las stats por ahora.
+                const response = await fetch('/api/processes');
                 const result = await response.json();
-                processesListUl.innerHTML = ''; // Clear list
+                processesListUl.innerHTML = '';
+                processesStatsDiv.innerHTML = '';
 
-                if (result.success && result.data) { // result.data son las stats aquí
-                    const stats = result.data;
-                    for (const statusKey in stats) {
-                        if (statusKey !== 'total' && stats[statusKey] > 0) {
-                           const li = document.createElement('li');
-                           li.textContent = `Procesos ${statusKey}: ${stats[statusKey]}`;
-                           processesListUl.appendChild(li);
-                        }
+                if (result.success && result.data) {
+                    // Mostrar Estadísticas de Procesos
+                    if (result.data.stats) {
+                        const stats = result.data.stats;
+                        let statsHTML = '<h4>Resumen de Procesos:</h4><p>';
+                        statsHTML += `Total: ${stats.total || 0} | `;
+                        statsHTML += `Pendientes: ${stats.pending || 0} | `;
+                        statsHTML += `Corriendo: ${stats.running || 0} | `;
+                        statsHTML += `Pausados: ${stats.paused || 0} | `;
+                        statsHTML += `Programados: ${stats.scheduled || 0} | `;
+                        statsHTML += `Completados: ${stats.completed || 0} | `;
+                        statsHTML += `Fallidos: ${stats.failed || 0} | `;
+                        statsHTML += `Detenidos: ${stats.stopped || 0}`;
+                        statsHTML += '</p>';
+                        processesStatsDiv.innerHTML = statsHTML;
                     }
-                    if (processesListUl.children.length === 0) {
-                         processesListUl.innerHTML = '<li>No hay procesos activos o registrados.</li>';
-                    }
-                     // Aquí iría la lógica para listar procesos individuales si el endpoint lo soportara
-                     // Por ejemplo, si /api/processes devolviera un array de objetos de proceso:
-                     /*
-                     if (Array.isArray(result.data.list)) { // Suponiendo que result.data.list existe
+
+                    // Listar Procesos Individuales
+                    if (Array.isArray(result.data.list) && result.data.list.length > 0) {
                         result.data.list.forEach(proc => {
                             const li = document.createElement('li');
                             const detailsDiv = document.createElement('div');
                             detailsDiv.className = 'details';
+                            let scheduledInfo = '';
+                            if (proc.status === 'scheduled' && proc.scheduledTime) {
+                                scheduledInfo = `<span><strong>Programado para:</strong> ${new Date(proc.scheduledTime).toLocaleString()}</span>`;
+                            }
+                            let timingInfo = '';
+                            if (proc.startedAt) timingInfo += `<span><strong>Iniciado:</strong> ${new Date(proc.startedAt).toLocaleString()}</span>`;
+                            if (proc.completedAt) timingInfo += `<span><strong>Finalizado:</strong> ${new Date(proc.completedAt).toLocaleString()}</span>`;
+
+
                             detailsDiv.innerHTML = `
-                                <strong>ID:</strong> ${proc.id}<br>
-                                <strong>Estado:</strong> ${proc.status}<br>
-                                <strong>Progreso:</strong> ${proc.currentIndex || 0}/${proc.totalCount || 0} (${Math.round(((proc.currentIndex || 0) / (proc.totalCount || 1)) * 100)}%)
+                                <span><strong>ID:</strong> ${proc.id}</span>
+                                <span><strong>Estado:</strong> <span class="status-${proc.status}">${proc.status}</span></span>
+                                ${scheduledInfo}
+                                <span><strong>Progreso:</strong> ${proc.currentIndex || 0}/${proc.totalCount || 0} (${proc.progress || 0}%)</span>
+                                <span><strong>Éxito:</strong> ${proc.successCount || 0} | <strong>Fallo:</strong> ${proc.failureCount || 0} (Errores: ${proc.errorCount || 0})</span>
+                                ${timingInfo}
                             `;
                             const actionsDiv = document.createElement('div');
                             actionsDiv.className = 'actions';
@@ -738,20 +823,23 @@
                                 rBtn.onclick = () => controlProcess(proc.id, 'resume');
                                 actionsDiv.appendChild(rBtn);
                             }
-                            if (proc.status === 'running' || proc.status === 'paused' || proc.status === 'scheduled') {
+                            // Se puede detener un proceso en casi cualquier estado activo
+                            if (['running', 'paused', 'scheduled', 'pending'].includes(proc.status)) {
                                 const sBtn = document.createElement('button');
                                 sBtn.textContent = 'Detener';
-                                sBtn.onclick = () => { if(confirm('Seguro?')) controlProcess(proc.id, 'stop'); };
+                                sBtn.style.backgroundColor = '#dc3545'; // Rojo para detener
+                                sBtn.onclick = () => { if(confirm(`¿Estás seguro de que quieres detener el proceso ${proc.id}?`)) controlProcess(proc.id, 'stop'); };
                                 actionsDiv.appendChild(sBtn);
                             }
                             li.appendChild(detailsDiv);
                             li.appendChild(actionsDiv);
                             processesListUl.appendChild(li);
                         });
-                     }
-                     */
-
-
+                    } else if (!Array.isArray(result.data.list) || result.data.list.length === 0) {
+                        const li = document.createElement('li');
+                        li.textContent = 'No hay procesos individuales para mostrar.';
+                        processesListUl.appendChild(li);
+                    }
                 } else {
                     processesListUl.innerHTML = `<li>Error: ${result.error || 'No se pudo cargar la lista de procesos.'}</li>`;
                 }
@@ -762,11 +850,12 @@
         }
         refreshProcessesListButton.addEventListener('click', fetchProcesses);
 
-
         // Inicializar conexión WebSocket al cargar la página
         connectWebSocket();
-        fetchOverallStatus(); // Cargar estado inicial
-        fetchProcesses(); // Cargar lista de procesos inicial
+        // Cargar estado y procesos iniciales al activar las pestañas por primera vez (o al cargar la página si la pestaña está activa)
+        if (document.getElementById('statusTab').classList.contains('active')) fetchOverallStatus();
+        if (document.getElementById('processesTab').classList.contains('active')) fetchProcesses();
+
     </script>
 </body>
 </html>
