@@ -190,6 +190,13 @@
         .btn.btn-warning:hover {
             background: #e0a800;
         }
+        .btn.btn-info {
+            background: #17a2b8;
+        }
+        .btn.btn-info:hover {
+            background: #138496;
+        }
+
 
         .form-group {
             margin-bottom: 25px;
@@ -276,6 +283,13 @@
             justify-content: center;
             margin: 30px 0;
         }
+        .qr-controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
 
         .qr-container {
             text-align: center;
@@ -297,6 +311,16 @@
             align-items: center;
             justify-content: center;
         }
+        .qr-code p {
+            color: #6c757d;
+            padding: 20px;
+        }
+        .qr-code img {
+            max-width: 100%;
+            height: auto;
+            max-height: 250px;
+        }
+
 
         .status-indicator {
             display: inline-block;
@@ -546,23 +570,26 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                         </h3>
                         
                         <div id="qrCode" class="qr-code">
-                            <div style="padding: 40px; color: #6c757d;">
-                                <div style="font-size: 3rem;">📱</div>
-                                <p>Haz clic en "Generar QR" para conectar con WhatsApp Web</p>
-                            </div>
+                            <p>Esperando conexión con el servidor para generar QR...</p>
                         </div>
                         
-                        <button class="btn" id="generateQRBtn" onclick="requestQRCodeGeneration()">
-                            Generar Código QR
-                        </button>
+                        <div class="qr-controls">
+                             <button class="btn" id="generateQRBtn" onclick="requestQRCodeGeneration()" disabled>
+                                Solicitar Nuevo QR
+                            </button>
+                            <button class="btn btn-danger" id="logoutBtn" onclick="requestLogout()" disabled>
+                                Desconectar WhatsApp
+                            </button>
+                        </div>
+                       
                         
                         <div style="margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
                             <h4>Instrucciones:</h4>
                             <ol>
-                                <li>Abre WhatsApp en tu teléfono</li>
-                                <li>Ve a Configuración > Dispositivos vinculados</li>
-                                <li>Toca "Vincular un dispositivo"</li>
-                                <li>Escanea el código QR que aparecerá arriba</li>
+                                <li>Abre WhatsApp en tu teléfono.</li>
+                                <li>Ve a Configuración > Dispositivos vinculados.</li>
+                                <li>Toca "Vincular un dispositivo".</li>
+                                <li>Escanea el código QR que aparecerá arriba.</li>
                             </ol>
                         </div>
                     </div>
@@ -635,31 +662,37 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
 
     <script>
         // Variables globales
-        let contacts = []; // Almacenará { name, number, originalRow, status (enviado/fallido/pendiente), error? }
+        let contacts = []; 
         let currentStep = 1;
-        let isWhatsAppConnected = false; // Estado de conexión de Baileys
-        let isSendingActive = false; // Si el proceso de envío está activo (backend)
-        let isSendingPaused = false; // Si el proceso de envío está pausado (backend)
+        let isWhatsAppConnected = false; 
+        let isBackendSocketConnected = false;
+        let isSendingActive = false; 
+        let isSendingPaused = false; 
         
-        let currentProcessingIndex = 0; // Para UI, cuántos han sido procesados (intentados)
+        let currentProcessingIndex = 0; 
         let sentSuccessfullyCount = 0;
         let failedToSendCount = 0;
         
-        let socket; // WebSocket connection
+        let socket; 
 
         // --- WebSocket Communication ---
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`; // Assumes backend on same host/port
+            const wsUrl = `${protocol}//${window.location.host}`; 
             
             addLog('🔌 Intentando conectar al backend vía WebSocket...', 'info');
             socket = new WebSocket(wsUrl);
 
             socket.onopen = () => {
+                isBackendSocketConnected = true;
                 addLog('🔌 Conectado al backend exitosamente.', 'info');
-                document.getElementById('connectionStatus').textContent = 'Conectado al Backend';
-                // Podrías enviar un mensaje inicial si es necesario, o pedir estado actual de Baileys
-                // socket.send(JSON.stringify({ type: 'get_initial_status' }));
+                document.getElementById('connectionStatus').textContent = 'Conectado al Servidor';
+                document.getElementById('statusIndicator').className = 'status-indicator status-connecting'; // Indica que estamos listos para conectar WA
+                document.getElementById('generateQRBtn').disabled = false;
+                document.getElementById('logoutBtn').disabled = false; // Habilitar siempre, el backend manejará si hay sesión o no
+                document.getElementById('qrCode').innerHTML = '<p>Haz clic en "Solicitar Nuevo QR" para conectar tu WhatsApp.</p>';
+                // Pedir estado inicial de Baileys al backend
+                sendToBackend('get_initial_baileys_status');
             };
 
             socket.onmessage = (event) => {
@@ -668,24 +701,32 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                     handleWebSocketMessage(data);
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error, event.data);
-                    addLog('Error procesando mensaje del backend.', 'error');
+                    addLog('Error procesando mensaje del backend: ' + event.data.substring(0, 100), 'error');
                 }
             };
 
             socket.onerror = (error) => {
+                isBackendSocketConnected = false;
                 console.error('WebSocket Error:', error);
                 addLog('Error de conexión WebSocket con el backend. Ver consola.', 'error');
                 document.getElementById('connectionStatus').textContent = 'Error conexión Backend';
                 document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
+                document.getElementById('generateQRBtn').disabled = true;
+                document.getElementById('logoutBtn').disabled = true;
+                document.getElementById('qrCode').innerHTML = '<p style="color:red;">Error de conexión con el servidor. Intenta recargar la página.</p>';
             };
 
             socket.onclose = () => {
+                isBackendSocketConnected = false;
+                isWhatsAppConnected = false;
                 addLog('🔌 Desconectado del backend. Intentando reconectar en 5s...', 'warning');
                 document.getElementById('connectionStatus').textContent = 'Desconectado del Backend';
                 document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
-                isWhatsAppConnected = false;
+                document.getElementById('generateQRBtn').disabled = true;
+                document.getElementById('logoutBtn').disabled = true;
+                 document.getElementById('qrCode').innerHTML = '<p style="color:orange;">Desconectado del servidor. Intentando reconectar...</p>';
                 updateUIAfterQRStatus();
-                setTimeout(connectWebSocket, 5000); // Reintentar conexión
+                setTimeout(connectWebSocket, 5000); 
             };
         }
 
@@ -694,38 +735,41 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                 socket.send(JSON.stringify({ type, payload }));
             } else {
                 addLog('⚠️ No se pudo enviar comando: WebSocket no conectado.', 'warning');
-                alert('Error: No hay conexión con el servidor. Por favor, recarga la página.');
+                // alert('Error: No hay conexión con el servidor. Por favor, recarga la página.');
             }
         }
 
         function handleWebSocketMessage(data) {
             const { type, payload } = data;
-            addLog(`📬 Backend dice: ${type} ${payload ? JSON.stringify(payload).substring(0,100)+'...' : ''}`);
+            // Evitar loguear el QR completo
+            const logPayload = (type === 'qr_code' && payload && payload.qr) ? '{ qr: "..." }' : (payload ? JSON.stringify(payload).substring(0,100)+'...' : '');
+            addLog(`📬 Backend: ${type} ${logPayload}`);
 
             const qrContainer = document.getElementById('qrCode');
             const statusIndicator = document.getElementById('statusIndicator');
             const statusText = document.getElementById('connectionStatus');
             const generateQRBtn = document.getElementById('generateQRBtn');
-            const goToSendingBtn = document.getElementById('goToSendingBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
 
             switch (type) {
                 case 'qr_code':
-                    addLog(' otrzymano QR, renderowanie...');
+                    addLog('QR recibido, renderizando...', 'info');
                     if (payload && payload.qr) {
-                        const qr = qrcode(0, 'M');
+                        const qr = qrcode(0, 'M'); // type 0, error correction M
                         qr.addData(payload.qr);
                         qr.make();
-                        qrContainer.innerHTML = `<img src="${qr.createDataURL(8)}" alt="QR Code" style="max-width: 250px;">`;
-                        statusText.textContent = 'Escanea el código QR';
+                        qrContainer.innerHTML = `<img src="${qr.createDataURL(10, 10)}" alt="QR Code">`; // Aumentar tamaño y padding
+                        statusText.textContent = 'Escanea el código QR con WhatsApp';
                         statusIndicator.className = 'status-indicator status-connecting';
-                        generateQRBtn.textContent = 'Volver a generar QR';
-                        generateQRBtn.disabled = false;
+                        isWhatsAppConnected = false; // Aún no está conectado, solo mostrando QR
                     } else {
-                         qrContainer.innerHTML = `<p style="color: red;">Error: QR no recibido del backend.</p>`;
+                         qrContainer.innerHTML = `<p style="color: red;">Error: QR no recibido correctamente del backend.</p>`;
                     }
+                    generateQRBtn.disabled = false;
+                    logoutBtn.disabled = false;
                     break;
 
-                case 'connection_update': // Estado de conexión de WhatsApp (Baileys)
+                case 'connection_update': 
                     isWhatsAppConnected = payload.status === 'open';
                     if (payload.status === 'open') {
                         statusIndicator.className = 'status-indicator status-connected';
@@ -734,36 +778,38 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                             <div style="padding: 40px; color: #28a745;">
                                 <div style="font-size: 3rem;">✅</div>
                                 <p><strong>¡WhatsApp Conectado!</strong></p>
+                                <p>${payload.message || ''}</p>
                             </div>`;
-                        generateQRBtn.textContent = 'Reconectar WhatsApp';
                         markStepCompleted(3);
                     } else if (payload.status === 'connecting') {
                         statusIndicator.className = 'status-indicator status-connecting';
                         statusText.textContent = 'Conectando WhatsApp...';
+                         qrContainer.innerHTML = `<p>Conectando WhatsApp... ${payload.message || ''}</p>`;
                     } else { // closed or error
+                        isWhatsAppConnected = false;
                         statusIndicator.className = 'status-indicator status-disconnected';
-                        statusText.textContent = `WhatsApp Desconectado: ${payload.message || 'Razón desconocida'}`;
+                        statusText.textContent = `WhatsApp Desconectado`;
                          qrContainer.innerHTML = `
-                            <div style="padding: 40px; color: #dc3545;">
-                                <div style="font-size: 3rem;">⚠️</div>
+                            <div style="padding: 20px; color: #dc3545;">
+                                <div style="font-size: 2rem;">⚠️</div>
                                 <p><strong>WhatsApp Desconectado</strong></p>
-                                <p>${payload.message || 'Intenta generar el QR de nuevo.'}</p>
+                                <p>${payload.message || 'Intenta solicitar un nuevo QR.'}</p>
                             </div>`;
-                        generateQRBtn.textContent = 'Generar Código QR';
+                        // No desmarcar el paso 3 como completado, el usuario podría querer reintentar
                     }
-                    generateQRBtn.disabled = false;
+                    generateQRBtn.disabled = false; // Siempre permitir solicitar nuevo QR
+                    logoutBtn.disabled = !isWhatsAppConnected; // Solo habilitar si está conectado
                     updateUIAfterQRStatus();
                     break;
 
                 case 'sending_started':
                     isSendingActive = true;
                     isSendingPaused = false;
-                    addLog('🚀 Envío iniciado por el backend.');
+                    addLog('🚀 Envío iniciado por el backend.', 'info');
                     updateSendingUI();
                     break;
 
                 case 'message_status':
-                    // payload: { contact: { name, number, originalRow }, status: 'sent'/'failed', error: 'optional error message' }
                     currentProcessingIndex++;
                     const contactIndex = contacts.findIndex(c => c.number === payload.contact.number && c.name === payload.contact.name && c.originalRow === payload.contact.originalRow);
 
@@ -783,19 +829,18 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                     break;
                 
                 case 'batch_pause_notification':
-                     addLog(`⏸️ Pausa automática por lote (gestionado por backend). Reanudará pronto.`, 'info');
-                     // UI no necesita cambiar mucho, backend gestiona esto.
+                     addLog(`⏸️ Pausa automática por lote. Reanudará pronto.`, 'info');
                      break;
 
                 case 'sending_paused':
                     isSendingPaused = true;
-                    addLog('⏸️ Envío pausado por el backend.');
+                    addLog('⏸️ Envío pausado por el backend.', 'info');
                     updateSendingUI();
                     break;
                 
                 case 'sending_resumed':
                     isSendingPaused = false;
-                    addLog('▶️ Envío reanudado por el backend.');
+                    addLog('▶️ Envío reanudado por el backend.', 'info');
                     updateSendingUI();
                     break;
 
@@ -803,23 +848,33 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                 case 'sending_finished':
                     isSendingActive = false;
                     isSendingPaused = false;
-                    if (type === 'sending_finished') addLog('🎉 ¡Envío masivo completado por el backend!');
-                    else addLog('🛑 Envío detenido por el backend.');
-                    addLog(`📊 Resumen final: ${sentSuccessfullyCount} enviados, ${failedToSendCount} fallidos.`);
+                    if (type === 'sending_finished') addLog('🎉 ¡Envío masivo completado por el backend!', 'info');
+                    else addLog('🛑 Envío detenido por el backend.', 'warning');
+                    addLog(`📊 Resumen: ${sentSuccessfullyCount} enviados, ${failedToSendCount} fallidos.`);
                     updateSendingUI();
-                    updateStats(); // Asegurar que las stats finales se muestran
+                    updateStats(); 
                     if (Notification.permission === 'granted') {
                         new Notification('WhatsApp Sender Pro', {
                             body: `Envío finalizado: ${sentSuccessfullyCount} mensajes enviados.`,
-                            icon: '📱' // Puedes poner una URL a un icono si quieres
                         });
                     }
                     break;
                 
-                case 'error_message': // Mensajes de error generales del backend
-                    addLog(`Backend Error: ${payload.message}`, 'error');
-                    alert(`Error del Servidor: ${payload.message}`);
+                case 'error_message': 
+                    addLog(`Error del Backend: ${payload.message}`, 'error');
+                    // alert(`Error del Servidor: ${payload.message}`); // Puede ser molesto
+                    if (payload.message && payload.message.includes("WhatsApp no está conectado")) {
+                         document.getElementById('qrCode').innerHTML = `<p style="color:red;">Error del servidor: ${payload.message}</p>`;
+                         statusIndicator.className = 'status-indicator status-disconnected';
+                         statusText.textContent = `WhatsApp Desconectado`;
+                         isWhatsAppConnected = false;
+                         updateUIAfterQRStatus();
+                    }
                     break;
+                
+                case 'info': // Mensajes informativos generales del backend
+                     addLog(`Info del Backend: ${payload.message}`, 'info');
+                     break;
 
                 default:
                     addLog(`Mensaje desconocido del backend: ${type}`, 'warning');
@@ -829,7 +884,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
         // --- Inicialización y UI ---
         document.addEventListener('DOMContentLoaded', function() {
             initializeApp();
-            connectWebSocket(); // Conectar al backend al cargar la página
+            connectWebSocket(); 
         });
 
         function initializeApp() {
@@ -849,15 +904,15 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             document.querySelectorAll('.step-item').forEach(item => {
                 item.addEventListener('click', () => {
                     const step = parseInt(item.dataset.step);
-                    if (step < currentStep || item.classList.contains('completed')) { // Allow going back or to completed
+                    if (step < currentStep || item.classList.contains('completed')) { 
                          goToStep(step);
-                    } else if (step === currentStep + 1 && validateCurrentStep()) { // Allow going to next if current is valid
+                    } else if (step === currentStep + 1 && validateCurrentStep()) { 
                         goToStep(step);
                     }
                 });
             });
             updateMessagePreview();
-            updateStats(); // Inicializar las estadísticas
+            updateStats(); 
         }
 
         function handleFile(file) {
@@ -867,7 +922,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                 return;
             }
 
-            addLog('Procesando archivo: ' + file.name);
+            addLog('Procesando archivo: ' + file.name, 'info');
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
@@ -875,7 +930,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                     const workbook = XLSX.read(data, {type: 'array'});
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: false, defval: ""}); // raw:false para obtener strings
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: false, defval: ""}); 
 
                     processContacts(jsonData, file.name);
                 } catch (error) {
@@ -892,21 +947,16 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             let validContactsCount = 0;
             let invalidRowsCount = 0;
 
-            // Saltar la primera fila (encabezados)
             for (let i = 1; i < data.length; i++) {
                 const row = data[i];
-                if (!row || row.length < 6) { // Asegurar que hay suficientes columnas
+                if (!row || row.length < 2) { // Necesita al menos hasta la columna B
                     invalidRowsCount++;
                     continue;
                 }
-
-                // Nombre: Columna B (índice 1). Tomar solo el primer nombre.
                 const fullName = row[1] ? String(row[1]).trim() : '';
                 const firstName = fullName.split(' ')[0];
-
-                // Números: Columnas D, E, F (índices 3, 4, 5)
                 const numbersInRow = [];
-                for (let colIdx of [3, 4, 5]) {
+                for (let colIdx of [3, 4, 5]) { // Columnas D, E, F (índices 3, 4, 5)
                     if (row[colIdx]) {
                         const rawNumber = String(row[colIdx]).trim();
                         if (isValidPeruvianNumber(rawNumber)) {
@@ -914,20 +964,22 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                         }
                     }
                 }
-
                 if (firstName && numbersInRow.length > 0) {
                     numbersInRow.forEach(number => {
                         contacts.push({
                             name: firstName,
                             number: number,
-                            originalRow: i + 1, // Fila original en Excel (1-indexed)
-                            status: 'Pendiente', // Estado inicial
+                            originalRow: i + 1, 
+                            status: 'Pendiente', 
                             error: null
                         });
                         validContactsCount++;
                     });
-                } else {
+                } else if (firstName || numbersInRow.length > 0) { // Si hay nombre pero no números, o viceversa con números válidos
                     invalidRowsCount++;
+                } else if (!firstName && numbersInRow.length === 0 && row.some(cell => String(cell).trim() !== "")) {
+                    // Fila con algún dato pero no los necesarios
+                     invalidRowsCount++;
                 }
             }
 
@@ -943,20 +995,18 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             displayContactPreview();
             document.getElementById('fileInfo').style.display = 'block';
             markStepCompleted(1);
-            addLog(`Archivo "${fileName}" procesado: ${validContactsCount} contactos válidos encontrados.`);
-            updateStats(); // Actualizar contadores restantes, etc.
+            addLog(`Archivo "${fileName}" procesado: ${validContactsCount} contactos válidos.`, 'info');
+            updateStats(); 
         }
 
         function isValidPeruvianNumber(numberStr) {
-            const cleanNumber = numberStr.replace(/\D/g, ''); // Quitar no dígitos
+            const cleanNumber = numberStr.replace(/\D/g, ''); 
             return cleanNumber.length === 9 && cleanNumber.startsWith('9');
         }
 
         function formatPeruvianNumber(numberStr) {
             const cleanNumber = numberStr.replace(/\D/g, '');
-            return '51' + cleanNumber; // Se añade el + luego al enviar a Baileys si es necesario, o Baileys lo maneja.
-                                       // Baileys usualmente espera el número sin el '+', solo digitos.
-                                       // Si tu backend espera 519xxxxxxxx, está bien. Si espera +519xxxxxxxx, ajústalo aquí o en el backend.
+            return '51' + cleanNumber; 
         }
 
         function displayContactPreview() {
@@ -989,7 +1039,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                 const sampleContact = contacts[0];
                 const previewMessage = messageText
                     .replace(/{nombre}/g, sampleContact.name)
-                    .replace(/{numero}/g, `+${sampleContact.number}`); // Mostrar con + para el usuario
+                    .replace(/{numero}/g, `+${sampleContact.number}`); 
                 previewEl.innerHTML = `<strong>Ejemplo con "${sampleContact.name}":</strong><br>${previewMessage.replace(/\n/g, '<br>') || 'Escribe tu mensaje...'}`;
             } else {
                 previewEl.innerHTML = messageText.replace(/\n/g, '<br>') || 'Escribe tu mensaje... (carga contactos para ver un ejemplo real)';
@@ -998,6 +1048,9 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
         
         function updateUIAfterQRStatus() {
             document.getElementById('goToSendingBtn').disabled = !isWhatsAppConnected;
+            document.getElementById('logoutBtn').disabled = !isWhatsAppConnected && !isBackendSocketConnected; // Deshabilitar solo si no hay conexión WA ni backend
+             // Habilitar generar QR si el backend está conectado
+            document.getElementById('generateQRBtn').disabled = !isBackendSocketConnected;
         }
 
         // --- QR Code Logic ---
@@ -1010,6 +1063,15 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             document.getElementById('connectionStatus').textContent = 'Solicitando QR...';
             sendToBackend('generate_qr_request');
         }
+
+        function requestLogout() {
+            if (confirm('¿Estás seguro de que quieres desconectar tu sesión de WhatsApp? Deberás escanear el QR de nuevo.')) {
+                addLog('Solicitando desconexión de WhatsApp al backend...', 'info');
+                sendToBackend('reset_baileys_request');
+                document.getElementById('logoutBtn').disabled = true;
+            }
+        }
+
 
         // --- Sending Logic ---
         function requestStartSending() {
@@ -1031,19 +1093,17 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             }
 
             addLog('Solicitando inicio de envío al backend...', 'info');
-            // Resetear contadores para este envío
             currentProcessingIndex = 0;
             sentSuccessfullyCount = 0;
             failedToSendCount = 0;
-            contacts.forEach(c => { // Reset status for re-sending
+            contacts.forEach(c => { 
                 c.status = 'Pendiente';
                 c.error = null;
             });
             updateStats();
 
-
             const payload = {
-                contacts: contacts, // Enviar toda la lista, el backend la gestionará
+                contacts: contacts, 
                 messageTemplate: messageText,
                 intervalSeconds: parseInt(document.getElementById('messageInterval').value),
                 batchSize: parseInt(document.getElementById('batchSize').value)
@@ -1054,10 +1114,10 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
         function requestPauseSending() {
             if (!isSendingActive) return;
             
-            if (isSendingPaused) { // Si está pausado, se quiere reanudar
+            if (isSendingPaused) { 
                 addLog('Solicitando reanudar envío al backend...', 'info');
                 sendToBackend('resume_sending_request');
-            } else { // Si está enviando, se quiere pausar
+            } else { 
                 addLog('Solicitando pausar envío al backend...', 'info');
                 sendToBackend('pause_sending_request');
             }
@@ -1085,14 +1145,18 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                 if (isSendingPaused) {
                     pauseBtn.innerHTML = '▶️ Reanudar';
                     pauseBtn.classList.remove('btn-warning');
+                    pauseBtn.classList.add('btn-info'); // Cambiar a azul para reanudar
                 } else {
                     pauseBtn.innerHTML = '⏸️ Pausar';
                     pauseBtn.classList.add('btn-warning');
+                    pauseBtn.classList.remove('btn-info');
                 }
             } else {
                 startBtn.innerHTML = '▶️ Iniciar Envío';
                 pauseBtn.innerHTML = '⏸️ Pausar';
                 pauseBtn.classList.add('btn-warning');
+                pauseBtn.classList.remove('btn-info');
+
             }
         }
 
@@ -1106,15 +1170,15 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             document.getElementById('progressFill').style.width = progress + '%';
             
             if (currentProcessingIndex > 0 && isSendingActive && !isSendingPaused && remaining > 0) {
-                const interval = parseInt(document.getElementById('messageInterval').value) || 5; // fallback
-                const batchSize = parseInt(document.getElementById('batchSize').value) || 20; // fallback
-                const batchesRemaining = Math.ceil(remaining / batchSize);
-                const pauseTimePerBatch = batchesRemaining > 0 ? (batchesRemaining -1) * 30 : 0; // 30s de pausa por lote
+                const interval = parseInt(document.getElementById('messageInterval').value) || 5; 
+                const batchSize = parseInt(document.getElementById('batchSize').value) || 20; 
+                const numBatchesRemaining = Math.max(0, Math.ceil(remaining / batchSize) -1) ; // -1 porque el lote actual no causa pausa aun
+                const pauseTimeForBatches = numBatchesRemaining * 30; // 30s de pausa por lote
 
-                const estimatedSeconds = (remaining * interval) + pauseTimePerBatch;
+                const estimatedSeconds = (remaining * interval) + pauseTimeForBatches;
                 const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
                 document.getElementById('estimatedTime').textContent = estimatedMinutes + ' min';
-            } else if (!isSendingActive && currentProcessingIndex > 0) {
+            } else if (!isSendingActive && currentProcessingIndex > 0 && currentProcessingIndex === contacts.length) {
                  document.getElementById('estimatedTime').textContent = 'Finalizado';
             }
             else {
@@ -1122,7 +1186,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             }
         }
 
-        function addLog(message, type = 'default') { // type: default, error, warning, info
+        function addLog(message, type = 'default') { 
             const logContainer = document.getElementById('logContainer');
             const timestamp = new Date().toLocaleTimeString();
             const logEntry = document.createElement('div');
@@ -1133,45 +1197,44 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             logEntry.textContent = `[${timestamp}] ${message}`;
             
             logContainer.appendChild(logEntry);
-            logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+            logContainer.scrollTop = logContainer.scrollHeight; 
             
-            if (logContainer.children.length > 200) { // Limitar logs
+            if (logContainer.children.length > 200) { 
                 logContainer.removeChild(logContainer.firstChild);
             }
         }
 
         function resetProcess() {
-            if (isSendingActive && !confirm('Hay un envío en progreso. ¿Estás seguro de que quieres reiniciar todo el proceso? Esto detendrá el envío actual.')) {
+            if (isSendingActive && !confirm('Hay un envío en progreso. ¿Estás seguro de que quieres reiniciar todo el proceso? Esto detendrá el envío actual y desconectará WhatsApp.')) {
                 return;
             }
             
             addLog('🔄 Reiniciando proceso completo...', 'info');
-            sendToBackend('reset_baileys_request'); // Pedir al backend que resetee su instancia Baileys
+            if (isWhatsAppConnected) { // Solo enviar logout si estaba conectado
+                sendToBackend('reset_baileys_request'); 
+            }
 
             contacts = [];
-            isWhatsAppConnected = false;
+            // isWhatsAppConnected se actualizará por el backend
+            // isBackendSocketConnected no se resetea aquí, es el estado del socket
             isSendingActive = false;
             isSendingPaused = false;
             currentProcessingIndex = 0;
             sentSuccessfullyCount = 0;
             failedToSendCount = 0;
             
-            document.getElementById('fileInput').value = ''; // Limpiar input de archivo
+            document.getElementById('fileInput').value = ''; 
             document.getElementById('fileInfo').style.display = 'none';
             document.getElementById('contactPreview').innerHTML = '';
             document.getElementById('messageText').value = '';
             updateMessagePreview();
             
-            document.getElementById('qrCode').innerHTML = `
-                <div style="padding: 40px; color: #6c757d;">
-                    <div style="font-size: 3rem;">📱</div>
-                    <p>Haz clic en "Generar QR" para conectar</p>
-                </div>`;
-            document.getElementById('connectionStatus').textContent = 'Desconectado del Backend (esperando reconexión)'; // Se actualizará en onopen
-            document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
-            const generateQRBtn = document.getElementById('generateQRBtn');
-            generateQRBtn.textContent = 'Generar Código QR';
-            generateQRBtn.disabled = false; // Habilitar por si el socket no está listo de inmediato
+            // El estado de QR y conexión será manejado por los mensajes del WebSocket
+            if (isBackendSocketConnected) {
+                document.getElementById('qrCode').innerHTML = '<p>Haz clic en "Solicitar Nuevo QR" para conectar tu WhatsApp.</p>';
+            } else {
+                document.getElementById('qrCode').innerHTML = '<p style="color:orange;">Desconectado del servidor. Intentando reconectar...</p>';
+            }
             
             updateUIAfterQRStatus();
             updateSendingUI();
@@ -1180,7 +1243,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             document.getElementById('logContainer').innerHTML = '<div class="log-entry">Sistema reiniciado - Esperando comandos...</div>';
             
             document.querySelectorAll('.step-item').forEach(item => item.classList.remove('completed'));
-            goToStep(1); // Volver al primer paso
+            goToStep(1); 
         }
 
         function exportReport() {
@@ -1194,34 +1257,28 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
 
             const reportDetails = contacts.map(contact => ({
                 'Nombre Contacto': contact.name,
-                'Número Enviado': `+${contact.number}`, // Mostrar con +
+                'Número Enviado': `+${contact.number}`, 
                 'Fila Original Excel': contact.originalRow,
                 'Estado Envío': contact.status || 'Pendiente',
                 'Error (si falló)': contact.error || ''
             }));
 
             const wsDetails = XLSX.utils.json_to_sheet(reportDetails);
-            // Ajustar ancho de columnas (opcional, pero mejora la legibilidad)
             wsDetails['!cols'] = [
-                { wch: 20 }, // Nombre Contacto
-                { wch: 15 }, // Número Enviado
-                { wch: 10 }, // Fila Original Excel
-                { wch: 15 }, // Estado Envío
-                { wch: 30 }  // Error
+                { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 30 } 
             ];
 
             const summaryData = [
-                { "Métrica": "Total Contactos Cargados (nombre+número)", "Valor": contacts.length },
-                { "Métrica": "Total Mensajes Procesados (intentados)", "Valor": currentProcessingIndex },
-                { "Métrica": "Mensajes Enviados Exitosamente", "Valor": sentSuccessfullyCount },
-                { "Métrica": "Mensajes Fallidos", "Valor": failedToSendCount },
-                { "Métrica": "Mensajes Pendientes de Procesar", "Valor": Math.max(0, contacts.length - currentProcessingIndex) },
-                { "Métrica": "Tasa de Éxito (sobre procesados)", "Valor": currentProcessingIndex > 0 ? `${((sentSuccessfullyCount / currentProcessingIndex) * 100).toFixed(2)}%` : "N/A" },
+                { "Métrica": "Total Contactos Cargados", "Valor": contacts.length },
+                { "Métrica": "Total Mensajes Procesados", "Valor": currentProcessingIndex },
+                { "Métrica": "Enviados Exitosamente", "Valor": sentSuccessfullyCount },
+                { "Métrica": "Fallidos", "Valor": failedToSendCount },
+                { "Métrica": "Pendientes", "Valor": Math.max(0, contacts.length - currentProcessingIndex) },
+                { "Métrica": "Tasa de Éxito (s/procesados)", "Valor": currentProcessingIndex > 0 ? `${((sentSuccessfullyCount / currentProcessingIndex) * 100).toFixed(2)}%` : "N/A" },
                 { "Métrica": "Fecha del Reporte", "Valor": new Date().toLocaleString() }
             ];
             const wsSummary = XLSX.utils.json_to_sheet(summaryData);
             wsSummary['!cols'] = [{ wch: 40 }, { wch: 20 }];
-
 
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, wsDetails, "Detalle Envíos");
@@ -1230,14 +1287,13 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             const fileName = `Reporte_WhatsAppSender_${new Date().toISOString().split('T')[0].replace(/-/g,'')}.xlsx`;
             XLSX.writeFile(wb, fileName);
             
-            addLog(`📊 Reporte XLSX "${fileName}" exportado exitosamente.`);
+            addLog(`📊 Reporte XLSX "${fileName}" exportado.`, 'info');
         }
 
         // --- Step Navigation ---
         function nextStep(step) {
             if (validateCurrentStep()) {
                 goToStep(step);
-                // markStepCompleted se llama ahora desde lugares específicos (ej. después de cargar archivo, después de conectar QR)
             }
         }
 
@@ -1253,7 +1309,10 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
             document.querySelector(`.step-item[data-step="${step}"]`).classList.add('active');
             
             currentStep = step;
-            if (step === 4) { // Al ir al paso 4, actualizar UI de envío
+            if (step === 3) { // Al ir al paso 3, asegurar que los botones de QR estén en estado correcto
+                updateUIAfterQRStatus();
+            }
+            if (step === 4) { 
                 updateSendingUI();
                 updateStats();
             }
@@ -1271,7 +1330,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                         addLog('Validación Paso 1 fallida: No hay contactos.', 'warning');
                         return false;
                     }
-                    markStepCompleted(1); // Se marca completo aquí al intentar pasar
+                    markStepCompleted(1); 
                     break;
                 case 2:
                     const message = document.getElementById('messageText').value.trim();
@@ -1288,7 +1347,7 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
                         addLog('Validación Paso 3 fallida: WhatsApp no conectado.', 'warning');
                         return false;
                     }
-                    // La marca de completado para el paso 3 se hace cuando el backend confirma la conexión.
+                    // markStepCompleted(3) se hace desde handleWebSocketMessage cuando se confirma la conexión
                     break;
             }
             return true;
@@ -1305,8 +1364,8 @@ Ejemplo: Hola {nombre}, tenemos una oferta especial para ti."></textarea>
         window.addEventListener('beforeunload', function(e) {
             if (isSendingActive) {
                 const confirmationMessage = 'Hay un envío en progreso. ¿Estás seguro de que quieres salir? El envío se detendrá.';
-                e.returnValue = confirmationMessage; // Estándar para la mayoría de navegadores
-                return confirmationMessage;       // Para navegadores más antiguos
+                e.returnValue = confirmationMessage; 
+                return confirmationMessage;       
             }
         });
     </script>
