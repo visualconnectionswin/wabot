@@ -4,9 +4,8 @@ const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
 const { Boom } = require('@hapi/boom');
-const P = require('pino'); // Importar Pino para el logger
+const P = require('pino');
 
-// Importación principal de Baileys
 const baileys = require('@whiskeysockets/baileys');
 
 const makeWASocket = baileys.default;
@@ -14,25 +13,24 @@ const {
     useMultiFileAuthState,
     DisconnectReason,
     Browsers
-    // No intentamos importar makeInMemoryStore explícitamente aquí
 } = baileys;
-
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const PORT = process.env.PORT || 3000;
-const AUTH_FILE_PATH = './baileys_auth_info';
-const STORE_FILE_PATH = './baileys_store.json'; // Para un store simple si Baileys lo crea internamente
+const PORT = process.env.PORT || 3000; // Render usa 10000 a veces, pero process.env.PORT es lo correcto
+const AUTH_DIR = './baileys_auth_info'; // Directorio para credenciales
+const STORE_FILE = './baileys_store.json'; // Archivo de store que Baileys podría usar
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 let waSocketInstance = null;
-let globalWsClient = null;
+let globalWsClient = null; // Cliente WebSocket activo para enviar actualizaciones
 
+// Variables de envío
 let globalContacts = [];
 let globalMessageTemplate = "";
 let globalIntervalSeconds = 5;
@@ -42,51 +40,82 @@ let sendingLoopTimeout = null;
 let isSendingProcessActive = false;
 let isSendingProcessPaused = false;
 
-// Función getMessage requerida por la configuración de Baileys
-// Para este ejemplo, será un stub. En una app real, buscarías el mensaje en tu DB.
+// Función getMessage requerida por Baileys
 const getMessage = async (key) => {
-    // console.log(`getMessage llamado para la clave: ${key.id}`);
-    // Aquí implementarías la lógica para buscar un mensaje guardado por su clave.
-    // Si usaras un store en memoria más explícito, podrías buscarlo ahí.
-    // Por ahora, retornamos undefined como si no se encontrara.
+    // console.log(`getMessage llamado para: ${key.id}`);
+    // En una implementación real, buscarías en tu base de datos de mensajes.
+    // Para envío masivo simple, si no necesitamos reintentar mensajes complejos, esto es suficiente.
     return undefined;
+};
+
+async function cleanupSessionFiles() {
+    console.log("Limpiando archivos de sesión (auth y store)...");
+    if (fs.existsSync(AUTH_DIR)) {
+        try {
+            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+            console.log(`Directorio de autenticación eliminado: ${AUTH_DIR}`);
+        } catch (e) {
+            console.error(`Error eliminando directorio de autenticación ${AUTH_DIR}:`, e.message);
+        }
+    }
+    if (fs.existsSync(STORE_FILE)) {
+        try {
+            fs.rmSync(STORE_FILE, { force: true });
+            console.log(`Archivo de store eliminado: ${STORE_FILE}`);
+        } catch (e) {
+            console.error(`Error eliminando archivo de store ${STORE_FILE}:`, e.message);
+        }
+    }
+}
+
+async function killExistingSocket() {
+    if (waSocketInstance) {
+        console.log("Intentando cerrar socket de Baileys existente...");
+        try {
+            // Forzar el cierre de la conexión WebSocket subyacente si existe
+            if (waSocketInstance.ws && typeof waSocketInstance.ws.close === 'function') {
+                waSocketInstance.ws.close();
+            }
+            // Finalizar la instancia de Baileys (esto puede o no ser necesario después de cerrar el ws)
+            // y puede fallar si la conexión ya está mal, por eso el try-catch.
+            await waSocketInstance.end(new Boom('Nueva conexión solicitada', { statusCode: DisconnectReason.connectionReplaced }));
+            console.log("Socket de Baileys anterior finalizado/cerrado.");
+        } catch (e) {
+            console.warn("Advertencia al finalizar/cerrar socket de Baileys anterior:", e.message);
+        }
+        waSocketInstance = null;
+    }
 }
 
 
 async function startBaileys(wsClient) {
-    if (waSocketInstance) {
-        console.log('Cerrando instancia de Baileys existente...');
-        try {
-            await waSocketInstance.logout();
-        } catch (e) {
-            console.warn("Advertencia al cerrar instancia previa (podría ya estar cerrada):", e.message);
+    await killExistingSocket(); // Primero intenta cerrar cualquier socket activo
+    await cleanupSessionFiles(); // Luego limpia los archivos
+
+    console.log("Iniciando nueva instancia de Baileys...");
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+
+    try {
+        waSocketInstance = makeWASocket({
+            auth: state,
+            logger: P({ level: 'silent' }), // Puedes cambiar a 'debug' para logs detallados de Baileys
+            browser: Browsers.macOS('Desktop'), // Simula ser un navegador de escritorio
+            getMessage: getMessage, // Requerido
+            // Considerar estas opciones para estabilidad, aunque la documentación no las fuerza:
+            // syncFullHistory: true, // Sincroniza todo el historial, puede consumir más al inicio
+            // printQRInTerminal: false, // Ya lo tenemos, pero por si acaso
+            // defaultQueryTimeoutMs: undefined, // Dejar que Baileys use su default
+            // keepAliveIntervalMs: 20000, // Para mantener la conexión activa
+        });
+    } catch (e) {
+        console.error("Error CRÍTICO al llamar a makeWASocket:", e);
+        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+            wsClient.send(JSON.stringify({ type: 'error_message', payload: { message: 'Error fatal creando instancia de WhatsApp: ' + e.message } }));
         }
-        waSocketInstance = null;
-    }
-    // Limpiar siempre las credenciales y el store para un nuevo QR
-    if (fs.existsSync(AUTH_FILE_PATH)) {
-        fs.rmSync(AUTH_FILE_PATH, { recursive: true, force: true });
-        console.log('Credenciales de autenticación anteriores eliminadas.');
-    }
-    if (fs.existsSync(STORE_FILE_PATH)) {
-        fs.rmSync(STORE_FILE_PATH, { force: true });
-        console.log('Archivo de store anterior eliminado.');
+        return; // No continuar si makeWASocket falla
     }
 
 
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FILE_PATH);
-
-    waSocketInstance = makeWASocket({
-        auth: state,
-        logger: P({ level: 'silent' }), // Usar Pino importado
-        browser: Browsers.macOS('Desktop'),
-        syncFullHistory: true,
-        shouldIgnoreJid: jid => jid && jid.includes('@broadcast'),
-        getMessage: getMessage // Añadir la función getMessage
-        // No se pasa `makeInMemoryStore` explícitamente
-    });
-
-    // Eventos de Baileys
     waSocketInstance.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -98,50 +127,47 @@ async function startBaileys(wsClient) {
         if (connection === 'close') {
             const boomError = lastDisconnect?.error ? new Boom(lastDisconnect.error) : null;
             const statusCode = boomError?.output?.statusCode;
-            let reason = 'Conexión cerrada. ';
+            let reason = `Conexión cerrada (Código: ${statusCode || 'N/A'}). `;
 
             if (statusCode === DisconnectReason.loggedOut) {
-                reason += 'Sesión cerrada (logged out). Deberás escanear el QR de nuevo.';
-                if (fs.existsSync(AUTH_FILE_PATH)) {
-                    fs.rmSync(AUTH_FILE_PATH, { recursive: true, force: true });
-                }
-                if (fs.existsSync(STORE_FILE_PATH)) {
-                    fs.rmSync(STORE_FILE_PATH, { force: true });
-                }
-                waSocketInstance = null;
+                reason += 'Sesión cerrada desde el teléfono o por WhatsApp. Deberás escanear el QR de nuevo.';
+                await cleanupSessionFiles(); // Limpiar todo
+                if (waSocketInstance) waSocketInstance = null;
             } else if (statusCode === DisconnectReason.connectionLost) {
-                reason += 'Conexión perdida con el servidor.';
+                reason += 'Conexión perdida con el servidor de WhatsApp.';
+                // Baileys intentará reconectar en algunos casos. Si falla persistentemente, se necesitará nuevo QR.
             } else if (statusCode === DisconnectReason.connectionReplaced) {
-                reason += 'Conexión reemplazada. Otra sesión se abrió.';
-                waSocketInstance = null;
+                reason += 'Conexión reemplazada (otra sesión abierta).';
+                // No limpiar credenciales, podría ser el mismo usuario en otro navegador/PC del bot.
+                // Pero la instancia actual es inútil.
+                if (waSocketInstance) waSocketInstance = null;
             } else if (statusCode === DisconnectReason.timedOut) {
                 reason += 'Tiempo de conexión agotado.';
             } else if (statusCode === DisconnectReason.multideviceMismatch) {
-                reason += 'Error de Multi-dispositivo. Por favor, escanea el QR de nuevo.';
-                 if (fs.existsSync(AUTH_FILE_PATH)) {
-                    fs.rmSync(AUTH_FILE_PATH, { recursive: true, force: true });
-                }
-                 if (fs.existsSync(STORE_FILE_PATH)) {
-                    fs.rmSync(STORE_FILE_PATH, { force: true });
-                }
-                waSocketInstance = null;
+                reason += 'Error de Multi-dispositivo (sesión inválida). Por favor, escanea el QR de nuevo.';
+                await cleanupSessionFiles(); // Limpiar todo
+                if (waSocketInstance) waSocketInstance = null;
             } else if (statusCode === DisconnectReason.restartRequired) {
-                reason += 'Reinicio requerido. Intentando reconectar Baileys...';
-                console.log(reason);
-                // No llamar a startBaileys aquí directamente para evitar bucles si el error persiste.
-                // Dejar que el usuario lo haga manualmente.
-            }
-             else {
-                reason += `Razón: ${lastDisconnect?.error?.message || statusCode || 'Desconocida'}.`;
+                reason += 'El servidor de WhatsApp solicitó un reinicio de la conexión.';
+                // La instancia actual es inútil. El usuario debe generar nuevo QR.
+                if (waSocketInstance) waSocketInstance = null;
+            } else {
+                reason += `Razón: ${lastDisconnect?.error?.message || 'Desconocida'}.`;
             }
             console.log(reason);
             if (wsClient && wsClient.readyState === WebSocket.OPEN) {
                 wsClient.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: reason } }));
             }
+            // Si la instancia se vuelve inútil por cualquier razón no gestionada arriba, asegurar que se limpia.
+            if (waSocketInstance && (statusCode !== DisconnectReason.connectionLost && statusCode !== DisconnectReason.connectionReplaced)) {
+                 // Si no es una pérdida temporal o reemplazo, la instancia actual es probablemente inválida.
+                 // killExistingSocket(); // Podría ser muy agresivo aquí y causar bucles.
+                 // Mejor confiar en que el usuario genere un nuevo QR.
+            }
         }
 
         if (connection === 'open') {
-            console.log('WhatsApp conectado exitosamente!');
+            console.log('¡WhatsApp conectado exitosamente!');
             if (wsClient && wsClient.readyState === WebSocket.OPEN) {
                 wsClient.send(JSON.stringify({ type: 'connection_update', payload: { status: 'open', message: 'WhatsApp Conectado' } }));
             }
@@ -149,16 +175,12 @@ async function startBaileys(wsClient) {
     });
 
     waSocketInstance.ev.on('creds.update', saveCreds);
-
-    // Si Baileys usa un store interno y lo escribe, podríamos intentar leerlo/escribirlo,
-    // pero la documentación no es clara sobre esto si no se pasa un store explícito.
-    // Por ahora, nos enfocamos en que la conexión y el envío funcionen.
 }
 
 
-// ... (El resto de server.js: sendMessageWithRetry, messageSendingLoop, wss.on('connection', ...), etc. permanece igual que en la respuesta anterior)
-// ... (Asegúrate de copiar todo el resto del archivo `server.js` que te proporcioné en la respuesta anterior, 
-//      desde la función `sendMessageWithRetry` hasta el final del archivo.)
+// ... (El resto de server.js: sendMessageWithRetry, messageSendingLoop, wss.on('connection', ...), etc. DEBERÍA SER IGUAL)
+// ... (Pega aquí el resto del código desde la función sendMessageWithRetry hasta el final, de la respuesta anterior)
+// ... (ASEGÚRATE DE COPIAR EL RESTO DEL ARCHIVO CORRECTAMENTE)
 async function sendMessageWithRetry(jid, content, retries = 2) {
     if (!waSocketInstance || !waSocketInstance.user) throw new Error("Baileys no está conectado o autenticado.");
     try {
@@ -245,17 +267,18 @@ async function messageSendingLoop(wsClient) {
 
 wss.on('connection', (ws) => {
     console.log('Cliente conectado a WebSocket');
+    if (globalWsClient && globalWsClient.readyState === WebSocket.OPEN) {
+        console.warn("Un cliente WebSocket ya estaba conectado. El nuevo cliente lo reemplazará.");
+        globalWsClient.close(1000, "Nueva conexión de cliente establecida");
+    }
     globalWsClient = ws; 
     ws.send(JSON.stringify({ type: 'info', payload: { message: 'Conectado al servidor WebSocket.' } }));
 
     setTimeout(() => { 
         if (ws.readyState === WebSocket.OPEN) {
             if (waSocketInstance && waSocketInstance.ws?.socket?.readyState === WebSocket.OPEN && waSocketInstance.user ) { 
-                console.log("Una sesión de Baileys ya está activa. Notificando al frontend.");
+                console.log("Sesión de Baileys activa. Notificando al frontend.");
                 ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'open', message: 'WhatsApp ya estaba conectado.' } }));
-            } else if (fs.existsSync(AUTH_FILE_PATH)) {
-                console.log("Se encontraron credenciales guardadas. El usuario puede solicitar QR si es necesario.");
-                 ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: 'Credenciales guardadas encontradas. Solicita QR si es necesario.' } }));
             } else {
                  ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: 'WhatsApp no conectado. Solicita QR.' } }));
             }
@@ -266,7 +289,7 @@ wss.on('connection', (ws) => {
     ws.on('message', async (message) => {
         try {
             const parsedMessage = JSON.parse(message);
-            console.log('Recibido del cliente:', parsedMessage.type, parsedMessage.payload ? JSON.stringify(parsedMessage.payload).substring(0,50)+'...' : '');
+            console.log('Recibido del cliente:', parsedMessage.type, parsedMessage.payload ? JSON.stringify(parsedMessage.payload).substring(0,100)+'...' : '');
 
             switch (parsedMessage.type) {
                 case 'get_initial_baileys_status': 
@@ -277,11 +300,11 @@ wss.on('connection', (ws) => {
                     }
                     break;
                 case 'generate_qr_request':
-                    console.log("Solicitud para generar QR/Iniciar Baileys...");
+                    console.log("Solicitud del cliente para generar QR/Iniciar Baileys...");
                     startBaileys(ws).catch(err => {
-                        console.error("Error al iniciar Baileys:", err);
+                        console.error("Error al procesar generate_qr_request (startBaileys):", err);
                         if (ws.readyState === WebSocket.OPEN) {
-                           ws.send(JSON.stringify({ type: 'error_message', payload: { message: 'Error iniciando WhatsApp: ' + err.message } }));
+                           ws.send(JSON.stringify({ type: 'error_message', payload: { message: 'Error al iniciar WhatsApp: ' + err.message } }));
                         }
                     });
                     break;
@@ -340,29 +363,11 @@ wss.on('connection', (ws) => {
                     break;
                 
                 case 'reset_baileys_request': 
-                    console.log("Solicitud para cerrar sesión de Baileys...");
-                    if (waSocketInstance) {
-                        try {
-                            await waSocketInstance.logout(); 
-                            console.log("Logout de Baileys solicitado.");
-                        } catch (e) {
-                            console.error("Error durante el logout de Baileys (podría ya estar cerrado):", e.message);
-                             if (ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: 'Error al cerrar sesión. Intenta generar QR de nuevo.' } }));
-                             }
-                            if (waSocketInstance) waSocketInstance = null; 
-                            if (fs.existsSync(AUTH_FILE_PATH)) {
-                                fs.rmSync(AUTH_FILE_PATH, { recursive: true, force: true });
-                            }
-                             if (fs.existsSync(STORE_FILE_PATH)) { 
-                                fs.rmSync(STORE_FILE_PATH, { force: true });
-                            }
-                        }
-                    } else {
-                        console.log("No había sesión de Baileys activa para cerrar.");
-                         if (ws.readyState === WebSocket.OPEN) {
-                             ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: 'No había sesión activa.' } }));
-                         }
+                    console.log("Solicitud del cliente para cerrar sesión de Baileys...");
+                    await killExistingSocket();
+                    await cleanupSessionFiles();
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'connection_update', payload: { status: 'close', message: 'Sesión cerrada por el usuario.' } }));
                     }
                     isSendingProcessActive = false;
                     isSendingProcessPaused = false;
@@ -378,10 +383,11 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        console.log('Cliente WebSocket desconectado');
+        console.log(`Cliente WebSocket desconectado (ID global era: ${globalWsClient === ws})`);
         if (ws === globalWsClient) {
             globalWsClient = null; 
         }
+        // No cerrar Baileys aquí, permitir que persista si es posible.
     });
 
     ws.on('error', (error) => {
@@ -390,5 +396,5 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`Servidor WABot escuchando en http://localhost:${PORT}`);
+    console.log(`Servidor WABot escuchando en http://localhost:${PORT} (o la URL de Render)`);
 });
