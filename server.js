@@ -20,8 +20,8 @@ import dotenv from 'dotenv';
 
 // BuilderBot imports
 import { createBot, createProvider, createFlow } from '@builderbot/bot';
-import BaileysProvider from '@builderbot/provider-baileys';
-import { JsonFileDB } from '@builderbot/database-json'; // <--- MODIFICACIÓN AQUÍ: Nombre y sigue siendo nombrada
+import { BaileysProvider } from '@builderbot/provider-baileys'; // <--- MODIFICACIÓN AQUÍ
+import { JsonFileDB } from '@builderbot/database-json';
 
 // Environment variables
 dotenv.config();
@@ -33,8 +33,8 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const TIMEZONE = process.env.TIMEZONE || 'America/Lima';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const SESSIONS_DIR = './baileys_auth_info'; // Usado por BaileysProvider internamente
-const DB_PATH = './db.json'; // Path para el archivo de la base de datos JSON
+const SESSIONS_DIR = './baileys_auth_info';
+const DB_PATH = './db.json';
 const UPLOADS_DIR = './uploads';
 const LOGS_DIR = './logs';
 
@@ -107,7 +107,6 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // File upload configuration
-// ... (sin cambios en multer) ...
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
@@ -131,7 +130,6 @@ const upload = multer({
 });
 
 // Validation schemas
-// ... (sin cambios en Joi schema) ...
 const messageSchema = Joi.object({
   contacts: Joi.array().items(Joi.object({
     name: Joi.string().required(),
@@ -145,16 +143,15 @@ const messageSchema = Joi.object({
   scheduledTime: Joi.date().greater('now').optional()
 });
 
-
 // BuilderBot setup
 const flowWelcome = createFlow([]);
 
 const main = async () => {
-  // MODIFICACIÓN AQUÍ: Usar JsonFileDB y pasarle la configuración
   const database = new JsonFileDB({ filename: DB_PATH });
   logger.info(`Database adapter initialized with file: ${DB_PATH}`);
 
-  const provider = createProvider(BaileysProvider, {
+  // BaileysProvider ya está importado correctamente con llaves arriba
+  const provider = createProvider(BaileysProvider, { // Esta línea ahora debería funcionar
     name: 'whatsapp-bulk-sender',
     gifPlayback: false,
     timeRelease: 10800000,
@@ -168,9 +165,8 @@ const main = async () => {
     }
     if (code) {
         logger.info(`Pairing Code: ${code}. Please enter this code on your WhatsApp linked devices screen.`);
-        // Broadcast pairing code if UI can handle it
         wss.clients.forEach(client => {
-            if (client.readyState === 1) { // WebSocket.OPEN
+            if (client.readyState === 1) { 
                 client.send(JSON.stringify({ type: 'pairing_code', data: code }));
             }
         });
@@ -209,7 +205,7 @@ const main = async () => {
   });
 
   const { bot, provider: botProvider } = await createBot({
-    flow: createFlow([flowWelcome]), // Asegúrate que createFlow envuelva el array de flujos
+    flow: createFlow([flowWelcome]),
     database,
     provider
   });
@@ -220,8 +216,8 @@ const main = async () => {
   return { bot, provider: botProvider };
 };
 
-// BulkSendingManager Class (sin cambios internos, solo el getAllProcesses ya estaba bien)
-// ... (BulkSendingManager class y sus métodos permanecen igual que en la última versión que te di)
+// BulkSendingManager Class
+// ... (BulkSendingManager class y sus métodos permanecen igual)
 class BulkSendingManager {
   constructor() {
     this.processes = new Map();
@@ -275,7 +271,6 @@ class BulkSendingManager {
     }
     this.processes.delete(id);
     logger.info(`Deleted bulk sending process: ${id}`);
-    // Optionally broadcast a delete event if UI needs to react
   }
 
   async startProcess(id) {
@@ -285,19 +280,16 @@ class BulkSendingManager {
         return false;
     }
 
-    // Check if scheduled for future
     if (process.scheduledTime && new Date(process.scheduledTime) > new Date()) {
-      this.scheduleProcess(id); // This will set status to 'scheduled'
+      this.scheduleProcess(id); 
       return true;
     }
 
-    // If it was scheduled and now is the time, or not scheduled at all
     this.updateProcess(id, {
       status: 'running',
       startedAt: new Date().toISOString()
     });
 
-    // No need to await executeProcess here, let it run in background
     this.executeProcess(id).catch(err => {
         logger.error(`Unhandled error in executeProcess for ${id}:`, err);
         this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), `Critical error: ${err.message}`] });
@@ -309,7 +301,7 @@ class BulkSendingManager {
     const process = this.getProcess(id);
     if (!process || process.status !== 'running') return false;
 
-    if (process.timeout) { // If a delay timeout is active
+    if (process.timeout) { 
       clearTimeout(process.timeout);
       process.timeout = null;
     }
@@ -324,7 +316,7 @@ class BulkSendingManager {
 
     this.updateProcess(id, { status: 'running' });
     logger.info(`Resuming bulk sending process: ${id}`);
-    this.executeProcess(id).catch(err => { // Resume execution
+    this.executeProcess(id).catch(err => { 
         logger.error(`Unhandled error in executeProcess (resume) for ${id}:`, err);
         this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), `Critical error: ${err.message}`] });
     });
@@ -431,7 +423,6 @@ class BulkSendingManager {
             messagePayload = { text: personalizedMessage };
           }
 
-
           const sendResult = await global.providerInstance.vendor.sendMessage(formattedNumber, messagePayload);
           logger.info(`Message sent to ${number} (contact: ${contact.name}, row: ${contact.rowIndex}). ID: ${sendResult.key?.id}. Process: ${id}`);
           successfulSendsThisContact++;
@@ -513,7 +504,6 @@ class BulkSendingManager {
         return path.basename(filePathOrUrl) || `document${path.extname(filePathOrUrl) || '.dat'}`;
     }
   }
-
 
   broadcastUpdate(processData) {
     const minimalProcessData = {
@@ -617,10 +607,10 @@ class BulkSendingManager {
   }
 }
 
+
 const bulkManager = new BulkSendingManager();
 
 // API Routes
-// ... (sin cambios en las rutas API, usar la versión completa que ya te di)
 app.post('/api/upload-excel', upload.single('excel'), async (req, res) => {
   try {
     if (!req.file) {
@@ -898,8 +888,6 @@ app.get('/api/status', (req, res) => {
   res.json({ success: true, data: status });
 });
 
-// WebSocket handling
-// ... (sin cambios en WebSocket handling, usar la versión completa que ya te di)
 wss.on('connection', (wsClient) => {
   logger.info('New WebSocket client connected.');
 
@@ -911,7 +899,12 @@ wss.on('connection', (wsClient) => {
               user: global.providerInstance?.vendor?.user || null
           }
       }));
-  } catch (e) { logger.error("Error sending initial status to new WS client", e); }
+      // Send initial pairing code if available and not authenticated
+      if (!global.providerInstance?.vendor?.user && global.providerInstance?.pairingCode) {
+           wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode }));
+      }
+
+  } catch (e) { logger.error("Error sending initial status/pairing code to new WS client", e); }
 
 
   wsClient.on('message', async (message) => {
@@ -928,16 +921,29 @@ wss.on('connection', (wsClient) => {
               user: global.providerInstance?.vendor?.user || null
             }
           }));
+          if (!global.providerInstance?.vendor?.user && global.providerInstance?.pairingCode) {
+            wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode }));
+          }
           break;
 
         case 'request_qr': 
           try {
             const qrPath = path.join(__dirname, 'bot.qr.png');
-            const qrBuffer = await fs.readFile(qrPath);
-            const qrDataUrl = `data:image/png;base64,${qrBuffer.toString('base64')}`;
-            wsClient.send(JSON.stringify({ type: 'qr_update', data: qrDataUrl }));
+            // Check if provider is using pairing code primarily
+            if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
+                 wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode, message: "Using pairing code." }));
+            } else { // Fallback to QR
+                const qrBuffer = await fs.readFile(qrPath);
+                const qrDataUrl = `data:image/png;base64,${qrBuffer.toString('base64')}`;
+                wsClient.send(JSON.stringify({ type: 'qr_update', data: qrDataUrl }));
+            }
           } catch { 
-            wsClient.send(JSON.stringify({ type: 'qr_update', data: null, message: "QR not available." }));
+            // If QR file not found or error, and no pairing code, send null QR.
+            if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
+                 wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode, message: "Using pairing code." }));
+            } else {
+                wsClient.send(JSON.stringify({ type: 'qr_update', data: null, message: "QR not available." }));
+            }
           }
           break;
       }
@@ -958,8 +964,6 @@ wss.on('connection', (wsClient) => {
   });
 });
 
-// Error handling middleware (must be last app.use())
-// ... (sin cambios en error handling middleware, usar la versión completa que ya te di)
 app.use((error, req, res, next) => {
   logger.error('Unhandled Express Error:', {
     message: error.message,
@@ -984,15 +988,10 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 404 handler for undefined routes
-// ... (sin cambios en 404 handler, usar la versión completa que ya te di)
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
 });
 
-
-// Graceful shutdown
-// ... (sin cambios en graceful shutdown, usar la versión completa que ya te di)
 const signals = { 'SIGINT': 2, 'SIGTERM': 15 };
 Object.keys(signals).forEach(signal => {
     process.on(signal, async () => {
@@ -1042,17 +1041,15 @@ Object.keys(signals).forEach(signal => {
     });
 });
 
-
-// Initialize BuilderBot and start server
 main().then(() => {
   server.listen(PORT, () => {
     logger.info(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
     logger.info(`📱 WhatsApp Bulk Sender (BuilderBot Edition) listo.`);
     logger.info(`📊 Servidor WebSocket escuchando en ws://localhost:${PORT}`);
-    if(process.env.PHONE_NUMBER){
-        logger.info(`📞 Pairing Code para el número: ${process.env.PHONE_NUMBER} (si se solicita).`);
-    } else if (global.providerInstance?.usePairingCode) { // Verificar si usePairingCode está configurado en la instancia del provider
-        logger.info('📱 Pairing Code se utilizará (si no hay sesión previa). Esperando el código en la consola...');
+    if(process.env.PHONE_NUMBER && global.providerInstance?.usePairingCode){ // Check both
+        logger.info(`📞 Pairing Code para el número: ${process.env.PHONE_NUMBER} (si se solicita y no hay sesión).`);
+    } else if (global.providerInstance?.usePairingCode) { 
+        logger.info('📱 Pairing Code se utilizará (si no hay sesión previa). Esperando el código en la consola/UI...');
     } else {
         logger.info('📱 Escanee el código QR (si no hay sesión previa). El archivo bot.qr.png se generará.');
     }
