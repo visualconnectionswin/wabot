@@ -109,6 +109,18 @@
             padding: 5px;
             border-radius: 4px;
         }
+        #pairingCodeDisplay {
+            font-weight: bold;
+            color: #1a73e8;
+            font-size: 1.2em;
+            margin: 15px 0;
+            text-align: center;
+            letter-spacing: 1px;
+            padding: 10px;
+            border: 1px dashed #1a73e8;
+            border-radius: 4px;
+            background-color: #e9f5ff;
+        }
         #connectionStatus, #progressText, #processStatusText, #overallStatusText {
             font-style: italic;
             color: #555;
@@ -159,6 +171,14 @@
             border-radius: 4px;
             margin-top: 10px;
         }
+        .info-message { /* Para el pairing code u otros mensajes informativos */
+            color: #00529B;
+            background-color: #BDE5F8;
+            border: 1px solid #00529B;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
         .tabs {
             display: flex;
             border-bottom: 1px solid #ccc;
@@ -194,27 +214,27 @@
             margin-bottom: 10px;
             border-radius: 4px;
             display: flex;
-            flex-wrap: wrap; /* Allow wrapping for smaller screens */
+            flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
         }
         #processesList li .details {
              flex-grow: 1;
-             margin-right: 10px; /* Space before actions */
-             min-width: 200px; /* Ensure details have some space */
+             margin-right: 10px;
+             min-width: 200px;
         }
         #processesList li .details span { display: block; font-size: 0.9em; margin-bottom: 3px; }
         #processesList li .details strong { color: #333; }
         #processesList li .actions {
             display: flex;
-            gap: 5px; /* Space between buttons */
-            flex-shrink: 0; /* Prevent actions from shrinking too much */
+            gap: 5px;
+            flex-shrink: 0;
         }
         #processesList li .actions button {
             font-size: 0.8em;
-            padding: 6px 10px; /* Smaller buttons for the list */
-            margin-top: 0; /* Remove top margin for list buttons */
-            margin-right: 0; /* Remove right margin as gap is used */
+            padding: 6px 10px;
+            margin-top: 0;
+            margin-right: 0;
         }
 
         @media (max-width: 768px) {
@@ -222,11 +242,11 @@
                 grid-template-columns: 1fr;
             }
             #processesList li {
-                flex-direction: column; /* Stack details and actions on small screens */
+                flex-direction: column;
                 align-items: flex-start;
             }
             #processesList li .actions {
-                margin-top: 10px; /* Add space when stacked */
+                margin-top: 10px;
                 width: 100%;
                 justify-content: flex-start;
             }
@@ -247,9 +267,10 @@
             <div class="grid-container">
                 <div class="grid-item qr-area">
                     <h2>Autenticación WhatsApp</h2>
-                    <img id="qrCodeImg" src="" alt="Escanea el código QR">
+                    <img id="qrCodeImg" src="" alt="Escanea el código QR" style="display: none;">
+                    <p id="pairingCodeDisplay" style="display: none;"></p>
                     <p id="connectionStatus">Estado de conexión: Desconectado</p>
-                    <button id="requestQRButton">Solicitar Nuevo QR (si no aparece)</button>
+                    <button id="requestQRButton">Solicitar Autenticación</button>
                 </div>
 
                 <div class="grid-item file-upload-area">
@@ -348,11 +369,11 @@
         const wsURL = `${wsProtocol}//${window.location.host}`;
         let ws = null;
 
-        let a_excelContacts = []; // Array para almacenar los contactos del Excel procesado
-        let a_currentProcessId = null; // ID del proceso que se está mostrando en la UI principal
+        let a_excelContacts = [];
+        let a_currentProcessId = null;
 
-        // Elementos UI
         const qrCodeImg = document.getElementById('qrCodeImg');
+        const pairingCodeDisplayP = document.getElementById('pairingCodeDisplay');
         const connectionStatusP = document.getElementById('connectionStatus');
         const requestQRButton = document.getElementById('requestQRButton');
 
@@ -393,16 +414,12 @@
         const processesStatsDiv = document.getElementById('processesStats');
         const refreshProcessesListButton = document.getElementById('refreshProcessesListButton');
 
-        function showMessage(text, type = 'info', duration = 5000) {
+        function showMessage(text, type = 'info', duration = 7000) { // Aumentar duración por defecto
             const div = document.createElement('div');
             div.textContent = text;
             div.className = type === 'error' ? 'error-message' : (type === 'success' ? 'success-message' : 'info-message');
-
-            // Limpiar mensajes anteriores solo si es un mensaje nuevo (para no borrar confirmaciones importantes rápido)
-            if (messageArea.firstChild && messageArea.firstChild.className.includes('-message')) {
-                 // messageArea.innerHTML = '';
-            }
-            messageArea.appendChild(div); // Agregar el nuevo mensaje
+            messageArea.innerHTML = ''; // Limpiar mensajes anteriores para evitar acumulación
+            messageArea.appendChild(div);
 
             if(duration > 0) {
                 setTimeout(() => {
@@ -415,15 +432,13 @@
 
         function connectWebSocket() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-                console.log('WebSocket ya está conectado o conectándose.');
                 return;
             }
-
             ws = new WebSocket(wsURL);
 
             ws.onopen = () => {
-                console.log('WebSocket conectado al servidor.');
-                connectionStatusP.textContent = 'Estado de conexión: Conectado al servidor.';
+                console.log('WebSocket conectado.');
+                connectionStatusP.textContent = 'Conectado al servidor. Verificando estado WhatsApp...';
                 ws.send(JSON.stringify({ type: 'get_status' }));
                 fetchProcesses();
             };
@@ -431,46 +446,62 @@
             ws.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
-                    console.log('Mensaje del servidor:', message);
+                    console.log('MSG Server:', message);
 
                     switch (message.type) {
-                        case 'qr_update':
+                        case 'qr_update': // Se usa si usePairingCode = false
+                            pairingCodeDisplayP.style.display = 'none';
+                            pairingCodeDisplayP.textContent = '';
                             qrCodeImg.src = message.data || '';
                             qrCodeImg.style.display = message.data ? 'block' : 'none';
                             if (message.data) {
-                                connectionStatusP.textContent = 'Estado de conexión: Escanee el QR.';
+                                connectionStatusP.textContent = 'Estado: Escanee el QR con WhatsApp.';
                                 connectionStatusP.className = 'disconnected';
-                            } else if (!connectionStatusP.textContent.includes('Autenticado')) {
-                                connectionStatusP.textContent = message.pairingCodeExpected ? 'Esperando código de emparejamiento (ver consola del servidor)...' : 'QR no disponible, esperando autenticación...';
+                            } else {
+                                connectionStatusP.textContent = 'QR no disponible. Intentando conectar...';
                                 connectionStatusP.className = 'disconnected';
                             }
                             break;
+
+                        case 'pairing_code': // Se usa si usePairingCode = true
+                            qrCodeImg.style.display = 'none';
+                            qrCodeImg.src = '';
+                            const pairingMsg = `Código de Emparejamiento: ${message.data}`;
+                            pairingCodeDisplayP.textContent = pairingMsg + ". Ingréselo en WhatsApp > Dispositivos Vinculados > Vincular con número de teléfono.";
+                            pairingCodeDisplayP.style.display = 'block';
+                            connectionStatusP.textContent = 'Estado: Esperando vinculación con código.';
+                            connectionStatusP.className = 'disconnected';
+                            showMessage(pairingMsg, 'info', 20000);
+                            break;
+
                         case 'status_update':
                             if (message.data.connected) {
-                                connectionStatusP.textContent = `Estado de conexión: Autenticado como ${message.data.user?.name || message.data.user?.id || 'Usuario'}.`;
+                                connectionStatusP.textContent = `Estado: Conectado como ${message.data.user?.name || message.data.user?.id || 'Usuario'}.`;
                                 connectionStatusP.className = 'connected';
-                                qrCodeImg.src = '';
                                 qrCodeImg.style.display = 'none';
+                                pairingCodeDisplayP.style.display = 'none';
+                                pairingCodeDisplayP.textContent = '';
+                                if (a_excelContacts.length > 0) startBulkSendButton.disabled = false;
                             } else {
-                                connectionStatusP.textContent = `Estado de conexión: WhatsApp Desconectado. ${message.data.error || 'Solicitando QR/Código...'}`;
+                                connectionStatusP.textContent = `Estado: Desconectado. ${message.data.error || 'Intentando obtener método de autenticación...'}`;
                                 connectionStatusP.className = 'disconnected';
-                                if (!message.data.error?.includes("Pairing Code")) { // Avoid loop if pairing code is expected
-                                    ws.send(JSON.stringify({ type: 'request_qr' }));
-                                }
+                                startBulkSendButton.disabled = true;
+                                // El servidor debería enviar 'qr_update' o 'pairing_code' si no está conectado.
+                                // El botón 'requestQRButton' puede forzar una nueva solicitud.
+                                ws.send(JSON.stringify({ type: 'request_qr' })); // Solicitar QR/código al recibir desconexión
                             }
                             break;
                         case 'process_update':
                             updateProcessUI(message.data);
-                            // Si la pestaña de procesos está activa, la actualizamos también.
                             if (document.getElementById('processesTab').classList.contains('active')) {
                                 fetchProcesses();
                             }
                             break;
                         default:
-                            console.log("Mensaje desconocido del WebSocket:", message);
+                            console.log("Tipo de mensaje WS no manejado:", message.type);
                     }
                 } catch (error) {
-                    console.error('Error procesando mensaje WebSocket:', error);
+                    console.error('Error procesando mensaje WS:', error, event.data);
                 }
             };
 
@@ -483,7 +514,7 @@
 
             ws.onclose = (event) => {
                 console.log('WebSocket desconectado:', event.code, event.reason);
-                connectionStatusP.textContent = `Estado de conexión: Desconectado del Servidor (${event.code}). Reintentando...`;
+                connectionStatusP.textContent = `Servidor Desconectado (${event.code}). Reintentando...`;
                 connectionStatusP.className = 'disconnected';
                 disableAllControls();
                 setTimeout(connectWebSocket, 5000);
@@ -491,7 +522,6 @@
         }
 
         function disableAllControls() {
-            // uploadButton.disabled = true; // No deshabilitar, el usuario puede querer cargar otro archivo
             startBulkSendButton.disabled = true;
             pauseButton.disabled = true;
             resumeButton.disabled = true;
@@ -500,8 +530,8 @@
 
         requestQRButton.addEventListener('click', () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'request_qr' }));
-                showMessage('Solicitando nuevo QR...', 'info');
+                showMessage('Solicitando estado de autenticación...', 'info');
+                ws.send(JSON.stringify({ type: 'request_qr' })); // Este mensaje en el server ahora maneja QR o Pairing Code
             } else {
                 showMessage('WebSocket no conectado. Intentando reconectar...', 'error');
                 connectWebSocket();
@@ -514,20 +544,15 @@
                 showMessage('Por favor, selecciona un archivo Excel.', 'error');
                 return;
             }
-
             const formData = new FormData();
             formData.append('excel', excelFile.files[0]);
             uploadButton.disabled = true;
             uploadButton.textContent = 'Procesando...';
-            startBulkSendButton.disabled = true; // Deshabilitar hasta que se procese
+            startBulkSendButton.disabled = true;
 
             try {
-                const response = await fetch('/api/upload-excel', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch('/api/upload-excel', { method: 'POST', body: formData });
                 const result = await response.json();
-
                 if (result.success && result.data) {
                     showMessage('Archivo procesado exitosamente.', 'success');
                     fileInfoDiv.style.display = 'block';
@@ -535,9 +560,7 @@
                     processedRowsSpan.textContent = result.data.processedRows;
                     validContactsCountSpan.textContent = result.data.validContacts;
                     totalNumbersSpan.textContent = result.data.summary.totalNumbersFound;
-
-                    a_excelContacts = result.data.contacts; // Guardar todos los contactos
-
+                    a_excelContacts = result.data.contacts;
                     contactsPreviewDiv.innerHTML = '';
                     if (a_excelContacts.length > 0) {
                         const previewCount = Math.min(5, a_excelContacts.length);
@@ -548,25 +571,21 @@
                             contactsPreviewDiv.appendChild(p);
                         }
                         if(a_excelContacts.length > previewCount) {
-                            const pMore = document.createElement('p');
-                            pMore.textContent = `... y ${a_excelContacts.length - previewCount} más contactos.`;
-                            contactsPreviewDiv.appendChild(pMore);
+                            contactsPreviewDiv.appendChild(document.createTextNode(`... y ${a_excelContacts.length - previewCount} más contactos.`));
                         }
-                        startBulkSendButton.disabled = false; // Habilitar si hay contactos
+                        if (connectionStatusP.className === 'connected') startBulkSendButton.disabled = false;
                     } else {
-                        contactsPreviewDiv.textContent = 'No se encontraron contactos válidos en el archivo.';
-                        showMessage('No se encontraron contactos válidos en el archivo.', 'error');
+                        contactsPreviewDiv.textContent = 'No se encontraron contactos válidos.';
+                        showMessage('No se encontraron contactos válidos.', 'error');
                     }
                 } else {
                     showMessage(result.error || 'Error al procesar el archivo.', 'error');
-                    fileInfoDiv.style.display = 'none';
-                    a_excelContacts = [];
+                    fileInfoDiv.style.display = 'none'; a_excelContacts = [];
                 }
             } catch (error) {
                 console.error('Error subiendo archivo:', error);
                 showMessage('Error de red al subir el archivo.', 'error');
-                fileInfoDiv.style.display = 'none';
-                a_excelContacts = [];
+                fileInfoDiv.style.display = 'none'; a_excelContacts = [];
             } finally {
                 uploadButton.disabled = false;
                 uploadButton.textContent = 'Procesar Archivo';
@@ -575,19 +594,9 @@
 
         bulkSendForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (a_excelContacts.length === 0) {
-                showMessage('No hay contactos cargados. Por favor, sube un archivo Excel primero.', 'error');
-                return;
-            }
-            if (!messageTemplateTextarea.value.trim()) {
-                showMessage('El mensaje no puede estar vacío.', 'error');
-                return;
-            }
-            if (connectionStatusP.className !== 'connected') {
-                 showMessage('WhatsApp no está conectado. Por favor, autentíquese primero.', 'error');
-                 return;
-            }
-
+            if (a_excelContacts.length === 0) { showMessage('No hay contactos cargados.', 'error'); return; }
+            if (!messageTemplateTextarea.value.trim()) { showMessage('El mensaje no puede estar vacío.', 'error'); return; }
+            if (connectionStatusP.className !== 'connected') { showMessage('WhatsApp no está conectado.', 'error'); return; }
 
             const payload = {
                 contacts: a_excelContacts,
@@ -598,57 +607,42 @@
                 scheduledTime: scheduledTimeInput.value || undefined
             };
             if (payload.scheduledTime && new Date(payload.scheduledTime) <= new Date()) {
-                showMessage('La fecha de programación debe ser en el futuro.', 'error');
-                return;
+                showMessage('La fecha de programación debe ser en el futuro.', 'error'); return;
             }
-
-            startBulkSendButton.disabled = true;
-            startBulkSendButton.textContent = 'Iniciando...';
-
+            startBulkSendButton.disabled = true; startBulkSendButton.textContent = 'Iniciando...';
             try {
                 const response = await fetch('/api/bulk-send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
                 });
                 const result = await response.json();
-
                 if (result.success) {
                     showMessage(result.message || `Proceso ${result.processId} iniciado/programado.`, 'success');
-                    a_currentProcessId = result.processId; // Establecer como proceso actual
+                    a_currentProcessId = result.processId;
                     currentProcessIdSpan.textContent = a_currentProcessId;
-                    // La UI se actualizará con el estado real vía WebSocket (process_update)
-                    // así que no forzamos el estado aquí, esperamos el primer broadcast.
                 } else {
                     showMessage(result.error || 'Error al iniciar el envío.', 'error');
-                    startBulkSendButton.disabled = (a_excelContacts.length === 0);
+                    startBulkSendButton.disabled = (a_excelContacts.length === 0 || connectionStatusP.className !== 'connected');
                     startBulkSendButton.textContent = 'Iniciar Envío Masivo';
                 }
             } catch (error) {
                 console.error('Error iniciando envío masivo:', error);
                 showMessage('Error de red al iniciar el envío.', 'error');
-                startBulkSendButton.disabled = (a_excelContacts.length === 0);
+                startBulkSendButton.disabled = (a_excelContacts.length === 0 || connectionStatusP.className !== 'connected');
                 startBulkSendButton.textContent = 'Iniciar Envío Masivo';
             }
         });
 
         function updateProcessUI(processData) {
-            // Actualizar la UI principal si el ID del proceso coincide con el proceso actual
-            // O si no hay un proceso actual y este es un nuevo proceso 'running' o 'scheduled'
             if (processData && (a_currentProcessId === processData.id || (!a_currentProcessId && ['running', 'scheduled', 'pending'].includes(processData.status)))) {
-                if (!a_currentProcessId) a_currentProcessId = processData.id; // Asignar si es el primer proceso activo que vemos
-
+                if (!a_currentProcessId) a_currentProcessId = processData.id;
                 currentProcessIdSpan.textContent = processData.id;
-                processStatusTextP.textContent = `Estado: ${processData.status}`;
+                let statusText = `Estado: ${processData.status}`;
                 if (processData.scheduledTime && (processData.status === 'scheduled' || processData.status === 'pending')) {
-                     processStatusTextP.textContent += ` (Para: ${new Date(processData.scheduledTime).toLocaleString()})`;
+                     statusText += ` (Para: ${new Date(processData.scheduledTime).toLocaleString()})`;
                 }
-
-
+                processStatusTextP.textContent = statusText;
                 const progress = processData.progress || 0;
-                progressBar.style.width = `${progress}%`;
-                progressBar.textContent = `${progress}%`;
-
+                progressBar.style.width = `${progress}%`; progressBar.textContent = `${progress}%`;
                 progressTextP.textContent = `Progreso: ${processData.currentIndex || 0}/${processData.totalCount || 0} | Éxito: ${processData.successCount || 0} | Fallo: ${processData.failureCount || 0}`;
                 updateProcessSpecificControls(processData.status);
             }
@@ -656,90 +650,62 @@
 
         function updateProcessSpecificControls(status) {
             startBulkSendButton.textContent = 'Iniciar Envío Masivo';
-            const isProcessActiveOnMainUI = !!a_currentProcessId;
+            const isProcessActiveOnMainUI = (a_currentProcessId && document.getElementById('currentProcessId').textContent === a_currentProcessId);
 
-            if (status === 'running' && isProcessActiveOnMainUI) {
-                pauseButton.disabled = false;
-                resumeButton.disabled = true;
-                stopButton.disabled = false;
-                startBulkSendButton.disabled = true;
-            } else if (status === 'paused' && isProcessActiveOnMainUI) {
-                pauseButton.disabled = true;
-                resumeButton.disabled = false;
-                stopButton.disabled = false;
-                startBulkSendButton.disabled = true;
-            } else if (status === 'scheduled' && isProcessActiveOnMainUI) {
-                pauseButton.disabled = true;
-                resumeButton.disabled = true;
-                stopButton.disabled = false; // Permitir cancelar/detener un programado
-                startBulkSendButton.disabled = true;
-            } else { // completed, failed, stopped, pending (o si no es el proceso de la UI principal)
-                pauseButton.disabled = true;
-                resumeButton.disabled = true;
-                stopButton.disabled = true;
+            pauseButton.disabled = !(status === 'running' && isProcessActiveOnMainUI);
+            resumeButton.disabled = !(status === 'paused' && isProcessActiveOnMainUI);
+            stopButton.disabled = !(['running', 'paused', 'scheduled', 'pending'].includes(status) && isProcessActiveOnMainUI);
+            startBulkSendButton.disabled = (status === 'running' || status === 'paused' || status === 'scheduled' || a_excelContacts.length === 0 || connectionStatusP.className !== 'connected');
+
+            if (['completed', 'failed', 'stopped'].includes(status) && isProcessActiveOnMainUI) {
+                a_currentProcessId = null;
+                currentProcessIdSpan.textContent = '-';
+                processStatusTextP.textContent = 'Estado: Esperando inicio';
+                progressBar.style.width = '0%'; progressBar.textContent = '0%';
+                progressTextP.textContent = 'Enviados: 0/0 | Exitosos: 0 | Fallidos: 0';
                 startBulkSendButton.disabled = (a_excelContacts.length === 0 || connectionStatusP.className !== 'connected');
-
-                if (['completed', 'failed', 'stopped'].includes(status) && isProcessActiveOnMainUI && a_currentProcessId) {
-                    // Si el proceso actual en la UI principal ha terminado, limpiamos a_currentProcessId
-                    // para permitir que se muestre un nuevo proceso si se inicia.
-                    if (document.getElementById('currentProcessId').textContent === a_currentProcessId) {
-                         a_currentProcessId = null; // Listo para un nuevo proceso en la UI principal
-                         currentProcessIdSpan.textContent = '-';
-                         processStatusTextP.textContent = 'Estado: Esperando inicio';
-                         progressBar.style.width = '0%';
-                         progressBar.textContent = '0%';
-                         progressTextP.textContent = 'Enviados: 0/0 | Exitosos: 0 | Fallidos: 0';
-                    }
-                }
             }
         }
 
         async function controlProcess(id, action) {
-            if (!id) {
-                showMessage('No hay un ID de proceso para controlar.', 'error');
-                return;
-            }
+            if (!id) { showMessage('No hay ID de proceso para controlar.', 'error'); return; }
+            const targetButton = action === 'pause' ? pauseButton : (action === 'resume' ? resumeButton : stopButton);
+            targetButton.disabled = true; // Deshabilitar botón específico temporalmente
             try {
                 const response = await fetch(`/api/process/${id}/${action}`, { method: 'POST' });
                 const result = await response.json();
                 if (result.success) {
-                    showMessage(`Acción '${action}' enviada para el proceso ${id}. Estado actual: ${result.processStatus || 'actualizando...'}`, 'success');
-                    // La UI se actualizará más completamente vía WebSocket 'process_update'
-                    // pero podemos actualizar el estado local de los botones de este proceso si es el actual
+                    showMessage(`Acción '${action}' para proceso ${id} exitosa. Nuevo estado: ${result.processStatus || 'actualizando...'}`, 'success');
                     if (id === a_currentProcessId && result.processStatus) {
-                        updateProcessSpecificControls(result.processStatus);
+                        updateProcessSpecificControls(result.processStatus); // Actualiza controles de la UI principal
                     }
-                    fetchProcesses(); // Refrescar la lista de procesos
+                    fetchProcesses(); // Refrescar siempre la lista de procesos
                 } else {
-                    showMessage(`Error al '${action}' el proceso ${id}: ${result.error || 'Error desconocido'}`, 'error');
+                    showMessage(`Error al '${action}' proceso ${id}: ${result.error || 'Error desconocido'}`, 'error');
+                    targetButton.disabled = false; // Rehabilitar si falla
                 }
             } catch (error) {
                 console.error(`Error en ${action} proceso:`, error);
                 showMessage(`Error de red al '${action}' el proceso.`, 'error');
+                targetButton.disabled = false; // Rehabilitar en error de red
             }
         }
 
         pauseButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'pause'));
         resumeButton.addEventListener('click', () => controlProcess(a_currentProcessId, 'resume'));
         stopButton.addEventListener('click', () => {
-            if (confirm(`¿Estás seguro de que quieres detener el proceso ${a_currentProcessId}?`)) {
+            if (a_currentProcessId && confirm(`¿Estás seguro de que quieres detener el proceso ${a_currentProcessId}?`)) {
                 controlProcess(a_currentProcessId, 'stop');
+            } else if (!a_currentProcessId) {
+                showMessage('No hay proceso activo en la UI principal para detener.', 'error');
             }
         });
 
         function openTab(evt, tabName) {
-            let i, tabcontent, tablinks;
-            tabcontent = document.getElementsByClassName("tab-content");
-            for (i = 0; i < tabcontent.length; i++) {
-                tabcontent[i].style.display = "none";
-            }
-            tablinks = document.getElementsByClassName("tab-button");
-            for (i = 0; i < tablinks.length; i++) {
-                tablinks[i].className = tablinks[i].className.replace(" active", "");
-            }
+            Array.from(document.getElementsByClassName("tab-content")).forEach(tc => tc.style.display = "none");
+            Array.from(document.getElementsByClassName("tab-button")).forEach(tb => tb.className = tb.className.replace(" active", ""));
             document.getElementById(tabName).style.display = "block";
             evt.currentTarget.className += " active";
-
             if (tabName === 'statusTab') fetchOverallStatus();
             if (tabName === 'processesTab') fetchProcesses();
         }
@@ -749,11 +715,7 @@
                 overallStatusText.textContent = 'Actualizando...';
                 const response = await fetch('/api/status');
                 const result = await response.json();
-                if (result.success) {
-                    overallStatusText.textContent = JSON.stringify(result.data, null, 2);
-                } else {
-                    overallStatusText.textContent = `Error: ${result.error || 'No se pudo cargar el estado.'}`;
-                }
+                overallStatusText.textContent = result.success ? JSON.stringify(result.data, null, 2) : `Error: ${result.error || 'No se pudo cargar.'}`;
             } catch (error) {
                 console.error('Error fetching overall status:', error);
                 overallStatusText.textContent = 'Error de red al cargar el estado.';
@@ -765,97 +727,56 @@
             try {
                 const response = await fetch('/api/processes');
                 const result = await response.json();
-                processesListUl.innerHTML = '';
-                processesStatsDiv.innerHTML = '';
-
+                processesListUl.innerHTML = ''; processesStatsDiv.innerHTML = '';
                 if (result.success && result.data) {
-                    // Mostrar Estadísticas de Procesos
                     if (result.data.stats) {
                         const stats = result.data.stats;
                         let statsHTML = '<h4>Resumen de Procesos:</h4><p>';
-                        statsHTML += `Total: ${stats.total || 0} | `;
-                        statsHTML += `Pendientes: ${stats.pending || 0} | `;
-                        statsHTML += `Corriendo: ${stats.running || 0} | `;
-                        statsHTML += `Pausados: ${stats.paused || 0} | `;
-                        statsHTML += `Programados: ${stats.scheduled || 0} | `;
-                        statsHTML += `Completados: ${stats.completed || 0} | `;
-                        statsHTML += `Fallidos: ${stats.failed || 0} | `;
-                        statsHTML += `Detenidos: ${stats.stopped || 0}`;
-                        statsHTML += '</p>';
-                        processesStatsDiv.innerHTML = statsHTML;
+                        ['total', 'pending', 'running', 'paused', 'scheduled', 'completed', 'failed', 'stopped'].forEach(key => {
+                            statsHTML += `${key.charAt(0).toUpperCase() + key.slice(1)}: ${stats[key] || 0} | `;
+                        });
+                        processesStatsDiv.innerHTML = statsHTML.slice(0, -3) + '</p>'; // Remover último " | "
                     }
-
-                    // Listar Procesos Individuales
                     if (Array.isArray(result.data.list) && result.data.list.length > 0) {
                         result.data.list.forEach(proc => {
                             const li = document.createElement('li');
-                            const detailsDiv = document.createElement('div');
-                            detailsDiv.className = 'details';
-                            let scheduledInfo = '';
-                            if (proc.status === 'scheduled' && proc.scheduledTime) {
-                                scheduledInfo = `<span><strong>Programado para:</strong> ${new Date(proc.scheduledTime).toLocaleString()}</span>`;
-                            }
-                            let timingInfo = '';
-                            if (proc.startedAt) timingInfo += `<span><strong>Iniciado:</strong> ${new Date(proc.startedAt).toLocaleString()}</span>`;
-                            if (proc.completedAt) timingInfo += `<span><strong>Finalizado:</strong> ${new Date(proc.completedAt).toLocaleString()}</span>`;
-
-
-                            detailsDiv.innerHTML = `
-                                <span><strong>ID:</strong> ${proc.id}</span>
-                                <span><strong>Estado:</strong> <span class="status-${proc.status}">${proc.status}</span></span>
-                                ${scheduledInfo}
-                                <span><strong>Progreso:</strong> ${proc.currentIndex || 0}/${proc.totalCount || 0} (${proc.progress || 0}%)</span>
-                                <span><strong>Éxito:</strong> ${proc.successCount || 0} | <strong>Fallo:</strong> ${proc.failureCount || 0} (Errores: ${proc.errorCount || 0})</span>
-                                ${timingInfo}
-                            `;
-                            const actionsDiv = document.createElement('div');
-                            actionsDiv.className = 'actions';
-
+                            const detailsDiv = document.createElement('div'); detailsDiv.className = 'details';
+                            let sch = proc.status === 'scheduled' && proc.scheduledTime ? `<span><strong>Programado:</strong> ${new Date(proc.scheduledTime).toLocaleString()}</span>` : '';
+                            let tim = '';
+                            if(proc.startedAt) tim += `<span><strong>Iniciado:</strong> ${new Date(proc.startedAt).toLocaleString()}</span>`;
+                            if(proc.completedAt) tim += `<span><strong>Finalizado:</strong> ${new Date(proc.completedAt).toLocaleString()}</span>`;
+                            detailsDiv.innerHTML = `<span><strong>ID:</strong> ${proc.id}</span>
+                                <span><strong>Estado:</strong> <span class="status-${proc.status}">${proc.status}</span></span>${sch}
+                                <span><strong>Progreso:</strong> ${proc.currentIndex||0}/${proc.totalCount||0} (${proc.progress||0}%)</span>
+                                <span><strong>Éxito:</strong> ${proc.successCount||0} | <strong>Fallo:</strong> ${proc.failureCount||0} (Errores: ${proc.errorCount||0})</span>${tim}`;
+                            const actionsDiv = document.createElement('div'); actionsDiv.className = 'actions';
                             if (proc.status === 'running') {
-                                const pBtn = document.createElement('button');
-                                pBtn.textContent = 'Pausar';
-                                pBtn.onclick = () => controlProcess(proc.id, 'pause');
-                                actionsDiv.appendChild(pBtn);
+                                const pBtn = document.createElement('button'); pBtn.textContent = 'Pausar';
+                                pBtn.onclick = () => controlProcess(proc.id, 'pause'); actionsDiv.appendChild(pBtn);
                             }
                             if (proc.status === 'paused') {
-                                const rBtn = document.createElement('button');
-                                rBtn.textContent = 'Reanudar';
-                                rBtn.onclick = () => controlProcess(proc.id, 'resume');
-                                actionsDiv.appendChild(rBtn);
+                                const rBtn = document.createElement('button'); rBtn.textContent = 'Reanudar';
+                                rBtn.onclick = () => controlProcess(proc.id, 'resume'); actionsDiv.appendChild(rBtn);
                             }
-                            // Se puede detener un proceso en casi cualquier estado activo
                             if (['running', 'paused', 'scheduled', 'pending'].includes(proc.status)) {
-                                const sBtn = document.createElement('button');
-                                sBtn.textContent = 'Detener';
-                                sBtn.style.backgroundColor = '#dc3545'; // Rojo para detener
-                                sBtn.onclick = () => { if(confirm(`¿Estás seguro de que quieres detener el proceso ${proc.id}?`)) controlProcess(proc.id, 'stop'); };
+                                const sBtn = document.createElement('button'); sBtn.textContent = 'Detener'; sBtn.style.backgroundColor = '#dc3545';
+                                sBtn.onclick = () => { if(confirm(`Detener proceso ${proc.id}?`)) controlProcess(proc.id, 'stop'); };
                                 actionsDiv.appendChild(sBtn);
                             }
-                            li.appendChild(detailsDiv);
-                            li.appendChild(actionsDiv);
-                            processesListUl.appendChild(li);
+                            li.appendChild(detailsDiv); li.appendChild(actionsDiv); processesListUl.appendChild(li);
                         });
-                    } else if (!Array.isArray(result.data.list) || result.data.list.length === 0) {
-                        const li = document.createElement('li');
-                        li.textContent = 'No hay procesos individuales para mostrar.';
-                        processesListUl.appendChild(li);
-                    }
-                } else {
-                    processesListUl.innerHTML = `<li>Error: ${result.error || 'No se pudo cargar la lista de procesos.'}</li>`;
-                }
+                    } else { processesListUl.innerHTML = '<li>No hay procesos individuales para mostrar.</li>'; }
+                } else { processesListUl.innerHTML = `<li>Error: ${result.error || 'No se pudo cargar la lista.'}</li>`; }
             } catch (error) {
                 console.error('Error fetching processes list:', error);
-                processesListUl.innerHTML = '<li>Error de red al cargar la lista de procesos.</li>';
+                processesListUl.innerHTML = '<li>Error de red al cargar la lista.</li>';
             }
         }
         refreshProcessesListButton.addEventListener('click', fetchProcesses);
 
-        // Inicializar conexión WebSocket al cargar la página
         connectWebSocket();
-        // Cargar estado y procesos iniciales al activar las pestañas por primera vez (o al cargar la página si la pestaña está activa)
         if (document.getElementById('statusTab').classList.contains('active')) fetchOverallStatus();
         if (document.getElementById('processesTab').classList.contains('active')) fetchProcesses();
-
     </script>
 </body>
 </html>
