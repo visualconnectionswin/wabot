@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Envío Masivo WhatsApp</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Envío Masivo de Mensajes WhatsApp</h1>
+
+        <div class="section" id="section-auth">
+            <h2>Paso 0: Autenticación</h2>
+            <button id="btnConnect">Conectar a WhatsApp / Mostrar QR</button>
+            <div id="qrArea">
+                <p id="qrMessage">Esperando conexión...</p>
+                <img id="qrImage" src="" alt="QR Code" style="display:none;">
+            </div>
+            <button id="btnLogout" style="display:none;">Cerrar Sesión de WhatsApp</button>
+        </div>
+
+        <div class="section" id="section-upload" style="display:none;">
+            <h2>Paso 1: Cargar Archivo de Contactos (XLSX)</h2>
+            <p>El archivo debe tener: Columna B = Nombre completo, Columnas D, E, F = Números de teléfono.</p>
+            <input type="file" id="contactsFile" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <button id="btnUploadFile">Cargar y Procesar Archivo</button>
+            <p id="fileStatus"></p>
+            <div id="contactsPreview" style="font-size: 0.8em; margin-top: 10px;"></div>
+        </div>
+
+        <div class="section" id="section-message" style="display:none;">
+            <h2>Paso 2: Configurar Mensaje y Envío</h2>
+            <textarea id="messageTemplate" placeholder="Escribe tu mensaje. Usa {nombre} para personalizar. Ejemplo: ¡Hola {nombre}! Tenemos una oferta especial para ti."></textarea>
+            <label for="sendInterval">Intervalo entre mensajes (segundos):</label>
+            <input type="number" id="sendInterval" value="5" min="1">
+            <div class="controls">
+                <button id="btnStartSending" disabled>Empezar Envío</button>
+                <button id="btnPauseSending" disabled>Pausar</button>
+                <button id="btnResumeSending" disabled>Reanudar</button>
+                <button id="btnStopSending" disabled>Detener</button>
+            </div>
+        </div>
+
+        <div class="section" id="section-progress" style="display:none;">
+            <h2>Paso 3: Progreso del Envío</h2>
+            <div id="progressBarContainer">
+                <div id="progressBar"></div>
+            </div>
+            <p id="progressText">0% (0/0)</p>
+            <p id="statusText">Estado: Esperando inicio...</p>
+            <p id="lastSentInfo"></p>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
