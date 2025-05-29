@@ -38,7 +38,7 @@ const DB_PATH = './db.json';
 const UPLOADS_DIR = './uploads';
 const LOGS_DIR = './logs';
 
-const IS_USING_PAIRING_CODE = true; // Basado en tu configuración de BaileysProvider
+const IS_USING_PAIRING_CODE = true;
 const EXPECTED_PHONE_NUMBER = process.env.PHONE_NUMBER || null;
 
 // Rate limiting
@@ -143,12 +143,11 @@ const main = async () => {
     name: 'whatsapp-bulk-sender',
     gifPlayback: false,
     timeRelease: 10800000,
-    usePairingCode: IS_USING_PAIRING_CODE, // Usar la constante
+    usePairingCode: IS_USING_PAIRING_CODE,
     phoneNumber: EXPECTED_PHONE_NUMBER
   });
 
-  global.providerInstance = provider; // Asignar la instancia del proveedor a global aquí
-                                     // para que el log de inicio pueda acceder a usePairingCode
+  global.providerInstance = provider;
 
   provider.on('require_action', ({ qr, code }) => {
     if (code) {
@@ -159,9 +158,8 @@ const main = async () => {
                 client.send(JSON.stringify({ type: 'pairing_code', data: code }));
             }
         });
-    } else if (qr) { // Solo si no es pairing code y se recibe un QR (menos probable con usePairingCode=true)
+    } else if (qr) {
         logger.info('QR Code received for authentication. Check bot.qr.png or /api/qr endpoint.');
-        // La UI pedirá el QR a través de /api/qr o WebSocket si este es el caso.
     }
   });
 
@@ -198,19 +196,14 @@ const main = async () => {
     });
   });
 
-  // `provider` ya está asignado a global.providerInstance, createBot lo usará.
-  const { bot, provider: botProviderFromCreateBot } = await createBot({
+  const { bot } = await createBot({ // No necesitamos reasignar provider a botProviderFromCreateBot
     flow: flowWelcome,
     database,
-    provider // Pasar la instancia de provider ya creada y asignada a global
+    provider
   });
 
-  // Aunque createBot devuelve una instancia de provider, la que nos interesa para
-  // el pairing code y el estado global es la que creamos con createProvider directamente.
-  // Asegurémonos de que global.providerInstance siga siendo la correcta.
-  // En la práctica, botProviderFromCreateBot debería ser la misma instancia que 'provider'.
   global.botInstance = bot;
-  // global.providerInstance = botProviderFromCreateBot; // Opcional, usualmente son la misma. Mantener la original es más seguro para el pairingCode.
+  // global.providerInstance ya está asignado arriba.
 
   return { bot, provider: global.providerInstance };
 };
@@ -329,7 +322,7 @@ class BulkSendingManager {
       return;
     }
     const { contacts, messageTemplate, delay, mediaUrl, mediaType } = process;
-    if (process.currentIndex >= process.totalCount) { // Double check if already completed
+    if (process.currentIndex >= process.totalCount) {
         if (process.status === 'running') {
             this.updateProcess(id, { status: 'completed', completedAt: new Date().toISOString() });
             logger.info(`Process ${id} already at end. Marked completed.`);
@@ -355,7 +348,7 @@ class BulkSendingManager {
           continue;
         }
         await global.providerInstance.vendor.sendPresenceUpdate('composing', formattedNumber);
-        await this.delay(Math.random() * 500 + 500); // Random delay
+        await this.delay(Math.random() * 500 + 500);
 
         let payload = { text: personalizedMessage };
         if (mediaUrl && mediaType) {
@@ -391,7 +384,7 @@ class BulkSendingManager {
     if (process.currentIndex < process.totalCount && process.status === 'running') {
       const nextDelay = Math.max(1000, delay + (Math.random() * delay * 0.2 - delay * 0.1));
       process.timeout = setTimeout(() => {
-        if (this.getProcess(id)?.status === 'running') this.executeProcess(id); // Continue
+        if (this.getProcess(id)?.status === 'running') this.executeProcess(id);
         else logger.info(`Process ${id} not running for next step after delay.`);
       }, nextDelay);
     } else if (process.currentIndex >= process.totalCount && process.status === 'running') {
@@ -419,9 +412,9 @@ class BulkSendingManager {
     try {
         const url = new URL(filePathOrUrl);
         let name = path.basename(decodeURIComponent(url.pathname));
-        if (!path.extname(name)) {
-            const mime = this.getMimeType(filePathOrUrl); // Get mime from full path/URL
-            const possibleExt = Object.keys(this.getMimeType('dummy.')).find(key => this.getMimeType('dummy' + key) === mime); // Re-getMimeType to use the internal map
+        if (!path.extname(name) && this.getMimeType(filePathOrUrl) !== 'application/octet-stream') {
+             const mime = this.getMimeType(filePathOrUrl);
+             const possibleExt = Object.keys(this.getMimeType('dummy.')).find(key => this.getMimeType('dummy' + key) === mime);
             if (possibleExt) name += possibleExt;
         }
         return name || `document${path.extname(url.pathname) || '.dat'}`;
@@ -454,7 +447,7 @@ class BulkSendingManager {
         }
         if (del) { this.deleteProcess(id); deleted++; }
       });
-      if(deleted) logger.info(`Cleanup: Deleted ${deleted} old processes.`); else logger.info('Cleanup: No processes to delete.');
+      if(deleted) logger.info(`Cleanup: Deleted ${deleted} old processes.`); else logger.info('Cleanup: No processes to delete this cycle.');
     });
   }
 
@@ -489,11 +482,11 @@ app.post('/api/upload-excel', upload.single('excel'), async (req, res) => {
     const nameH = ['nombre','name','cliente','contacto'];
     const phoneH = ['telefono','numero','celular','whatsapp','phone','móvil'];
     let nameIdx = headers.findIndex(h => nameH.includes(h));
-    if(nameIdx === -1) nameIdx = headers.findIndex(h => h.includes('nombre')) // Try partial
-    if(nameIdx === -1) nameIdx = 1; // Default B
+    if(nameIdx === -1) nameIdx = headers.findIndex(h => h.includes('nombre')) 
+    if(nameIdx === -1) nameIdx = 1; 
 
     let numIdxs = headers.map((h,i) => phoneH.some(ph=>h.startsWith(ph)) ? i : -1).filter(i => i !== -1);
-    if(numIdxs.length === 0) numIdxs = [3,4,5]; // Default D,E,F
+    if(numIdxs.length === 0) numIdxs = [3,4,5]; 
 
     const contacts = rows.reduce((acc, row, i) => {
       if (!row || row.every(c => c==null || String(c).trim()==='')) return acc;
@@ -598,15 +591,69 @@ app.use((e,q,s,n)=>{logger.error('Express Err:',{msg:e.message,stk:e.stack?.subs
 });
 app.use((q,s)=>s.status(404).json({error:'Not Found',message:`Route ${q.originalUrl} not found.`}));
 
-Object.keys(signals={SIGINT:2,SIGTERM:15}).forEach(sig=>process.on(sig,async()=>{logger.info(`Got ${sig}, shutting down...`);
-  bulkManager.processes.forEach((p,id)=>{if(['running','paused','scheduled','pending'].includes(p.status)){
-    if(p.timeout)clearTimeout(p.timeout);bulkManager.updateProcess(id,{status:'stopped',completedAt:new Date()});logger.info(`PID ${id} stopped.`);}});
-  wss.close(()=>logger.info('WS closed.'));server.close(async()=>{logger.info('HTTP closed.');
-    if(global.providerInstance?.vendor)try{await global.providerInstance.vendor.end();logger.info('Baileys closed.');}catch(e){logger.error('Baileys close err:',e);}
-    logger.info('Shutdown done.');process.exit(signals[sig]);});
-  setTimeout(()=>process.exit(1),10000);}));
+// Graceful shutdown
+const signals = { 'SIGINT': 2, 'SIGTERM': 15 };
+Object.keys(signals).forEach(signal => {
+  process.on(signal, async () => {
+    logger.info(`Received ${signal}, shutting down gracefully...`);
 
-main().then(()=>{server.listen(PORT,()=>{logger.info(`🚀 Express http://localhost:${PORT}`);logger.info(`📱 WA Bulk Sender Ready.`);logger.info(`📊 WS ws://localhost:${PORT}`);
-  const authM=IS_USING_PAIRING_CODE?(EXPECTED_PHONE_NUMBER?`Pairing Code for ${EXPECTED_PHONE_NUMBER}`:'Pairing Code (check console/UI)'):'QR Scan (bot.qr.png)';
-  logger.info(`🔑 Auth: ${authM}`);});
-}).catch(e=>{logger.error('❌ Server start failed:',e);process.exit(1);});
+    logger.info('Stopping active bulk processes...');
+    for (const [id, processItem] of bulkManager.processes) {
+      if (['running', 'paused', 'scheduled', 'pending'].includes(processItem.status)) {
+        if (processItem.timeout) clearTimeout(processItem.timeout);
+        bulkManager.updateProcess(id, { status: 'stopped', completedAt: new Date().toISOString() });
+        logger.info(`Process ${id} marked as stopped due to server shutdown.`);
+      }
+    }
+
+    wss.close(err => {
+      if (err) {
+        logger.error('Error closing WebSocket server:', err);
+      } else {
+        logger.info('WebSocket server closed.');
+      }
+
+      server.close(async (err_http) => {
+        if (err_http) {
+          logger.error('Error closing HTTP server:', err_http);
+        } else {
+          logger.info('HTTP server closed.');
+        }
+
+        if (global.providerInstance && global.providerInstance.vendor) {
+          logger.info('Disconnecting WhatsApp (Baileys)...');
+          try {
+            await global.providerInstance.vendor.end();
+            logger.info('WhatsApp (Baileys) disconnected.');
+          } catch (e) {
+            logger.error('Error disconnecting Baileys:', e);
+          }
+        }
+        logger.info('Shutdown complete.');
+        process.exit(signals[signal]); // Ahora signals[signal] funcionará
+      });
+    });
+
+    setTimeout(() => {
+      logger.warn('Graceful shutdown timed out. Forcing exit.');
+      process.exit(1); // Salir con código de error si el cierre tarda demasiado
+    }, 10000); // 10 segundos de tiempo de espera
+  });
+});
+
+
+main().then(() => {
+  server.listen(PORT, () => {
+    logger.info(`🚀 Express server running on http://localhost:${PORT}`);
+    logger.info(`📱 WhatsApp Bulk Sender (BuilderBot) ready.`);
+    logger.info(`📊 WebSocket server on ws://localhost:${PORT}`);
+    // El log de Auth method se basa ahora en constantes definidas arriba
+    const authMethod = IS_USING_PAIRING_CODE ?
+      (EXPECTED_PHONE_NUMBER ? `Pairing Code for ${EXPECTED_PHONE_NUMBER}` : 'Pairing Code (check console/UI)')
+      : 'QR Scan (bot.qr.png will be generated)';
+    logger.info(`🔑 Auth method: ${authMethod}`);
+  });
+}).catch(error => {
+  logger.error('❌ Server failed to start:', error);
+  process.exit(1);
+});
