@@ -16,68 +16,117 @@ let currentIndex = 0;
 let sendIntervalId = null;
 let progressUpdateCallback = () => {}; // Callback para actualizar el frontend vía Socket.IO
 
+let isInitializing = false; // Semáforo para evitar múltiples inicializaciones concurrentes
+let initializationTimeoutId = null; // Para el timeout
+
 // Flujo dummy, no se usa realmente para enviar, pero builderbot necesita un flujo
 const mainFlow = addKeyword(['hello-bot-custom-keyword-ignore'])
     .addAnswer('Bot está activo. Este es un flujo de respuesta automático no destinado a la interacción del usuario para esta aplicación.');
 
 async function initializeBot(progressCb) {
+    if (isInitializing && botState !== 'disconnected' && botState !== 'error' && botState !== 'pending') { // Permitir reintento si está desconectado o en error
+        console.log("BOT_HANDLER: Inicialización ya en curso y no en estado fallido. Omitiendo llamada duplicada.");
+        return;
+    }
+    isInitializing = true;
     progressUpdateCallback = progressCb;
     botState = 'initializing';
-    console.log("Initializing bot...");
+    console.log("BOT_HANDLER: Iniciando initializeBot...");
     progressUpdateCallback({ state: botState, qr: null, progress: 0, total: 0, sent: 0, error: null });
 
-    try {
-        const adapterDB = new MemoryDB();
-        const adapterFlow = createFlow([mainFlow]);
-        adapterProvider = createProvider(BaileysProvider);
+    // Limpiar timeout anterior si existe
+    if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
 
-        adapterProvider.on('qr', (qr) => {
+    try {
+        if (adapterProvider) {
+            console.log("BOT_HANDLER: Limpiando instancia de adapterProvider anterior...");
+            if (typeof adapterProvider.logout === 'function') {
+                try { await adapterProvider.logout(); } catch (e) { console.error("BOT_HANDLER: Error al hacer logout del provider anterior", e.message); }
+            } else if (adapterProvider.ws && typeof adapterProvider.ws.end === 'function') {
+                adapterProvider.ws.end(new Error('Re-initializing bot by ending old ws connection'));
+            }
+            adapterProvider = null;
+        }
+        if (botInstance) {
+            // No hay método de destroy explícito, se sobrescribirá.
+            botInstance = null;
+        }
+        console.log("BOT_HANDLER: Instancias anteriores limpiadas (si existían).");
+
+        console.log("BOT_HANDLER: Creando proveedor Baileys...");
+        const newAdapterProvider = createProvider(BaileysProvider);
+        console.log("BOT_HANDLER: Proveedor Baileys creado en memoria.");
+
+        newAdapterProvider.on('qr', (qr) => {
+            if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
             qrCodeData = qr;
             botState = 'qr';
-            console.log('QR Code Generated. Scan with WhatsApp.');
+            isInitializing = false;
+            console.log('BOT_HANDLER: Evento QR recibido. QR Data:', qr ? 'Sí (generado)' : 'No (vacío)');
             progressUpdateCallback({ state: botState, qr: qrCodeData });
         });
 
-        adapterProvider.on('ready', () => {
+        newAdapterProvider.on('ready', () => {
+            if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
             botState = 'ready';
-            qrCodeData = null; 
-            console.log('WhatsApp connected successfully!');
+            qrCodeData = null;
+            isInitializing = false;
+            console.log('BOT_HANDLER: Evento READY recibido. Conexión WhatsApp establecida.');
             progressUpdateCallback({ state: botState, qr: null });
         });
 
-        adapterProvider.on('close', ({ reason }) => {
+        newAdapterProvider.on('close', ({ reason }) => {
+            if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
             botState = 'disconnected';
             qrCodeData = null;
-            console.log('WhatsApp connection closed. Reason:', reason);
-            progressUpdateCallback({ state: botState, qr: null, error: `Connection closed: ${reason}` });
+            isInitializing = false;
+            console.log('BOT_HANDLER: Evento CLOSE recibido. Razón:', reason);
+            progressUpdateCallback({ state: botState, qr: null, error: `Conexión cerrada: ${reason}` });
         });
         
-        adapterProvider.on('error', (err) => {
-            console.error('BaileysProvider error:', err);
-            // No cambiar botState aquí directamente si 'close' ya lo maneja, para evitar doble update.
-            // Si es un error que no cierra la conexión, entonces sí actualizar.
-            if (botState !== 'disconnected') {
-                 botState = 'error';
-                 progressUpdateCallback({ state: botState, qr: null, error: `Provider error: ${err.message || err}` });
-            }
+        newAdapterProvider.on('error', (err) => {
+            // No limpiar timeout aquí necesariamente, 'close' podría seguir.
+            console.error('BOT_HANDLER: Error en BaileysProvider (evento "error"):', err.message || err);
+            // El estado 'error' podría manejarse si 'close' no lo hace o si es un error no fatal
+            // if (botState !== 'disconnected') {
+            //     // isInitializing = false; // Podría ser prematuro
+            //     botState = 'error';
+            //     progressUpdateCallback({ state: botState, qr: null, error: `Error del proveedor: ${err.message || err}` });
+            // }
         });
+        
+        adapterProvider = newAdapterProvider;
+        const adapterDB = new MemoryDB();
+        const adapterFlow = createFlow([mainFlow]);
 
+        console.log("BOT_HANDLER: Llamando a createBot con el nuevo proveedor...");
         botInstance = await createBot({
             flow: adapterFlow,
             provider: adapterProvider,
             database: adapterDB,
         });
-        console.log("Bot created successfully.");
-        // Si createBot devuelve un httpServer y necesitas configurarlo, hazlo aquí.
-        // Por ejemplo, si necesitas pasarle el puerto de Render o integrarlo con Express.
-        // Pero para esta app, el server.js maneja el servidor principal.
-        // No llamamos a adapterProvider.initHttpServer() aquí, asumimos que createBot lo maneja
-        // o que no es necesario para la generación de QR vía evento y envío de mensajes.
+        console.log("BOT_HANDLER: createBot completado (estructura del bot creada). Esperando eventos de Baileys (qr, ready)...");
+        
+        // Configurar un timeout para la inicialización.
+        initializationTimeoutId = setTimeout(() => {
+            if (isInitializing && botState === 'initializing') { // Solo si sigue en este estado y no se resolvió
+                console.error("BOT_HANDLER: Timeout de inicialización (60s). No se recibió 'qr' ni 'ready'.");
+                botState = 'error';
+                isInitializing = false;
+                progressUpdateCallback({
+                    state: botState,
+                    qr: null,
+                    error: "Timeout de inicialización. El bot no pudo conectarse. Intenta de nuevo o revisa los logs del servidor."
+                });
+            }
+        }, 75000); // 75 segundos, Baileys a veces puede tardar.
 
     } catch (error) {
-        console.error("Failed to create or initialize bot:", error);
+        if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
+        console.error("BOT_HANDLER: Fallo CRÍTICO en initializeBot (catch general):", error);
         botState = 'error';
-        progressUpdateCallback({ state: botState, qr: null, error: "Failed to create bot: " + (error.message || error) });
+        isInitializing = false;
+        progressUpdateCallback({ state: botState, qr: null, error: "Fallo al crear el bot: " + (error.message || error) });
     }
 }
 
@@ -276,45 +325,52 @@ function stopSendingProcess(finished = false) {
 }
 
 async function logout() {
-    console.log("Intentando cerrar sesión...");
-    if (adapterProvider && typeof adapterProvider.logout === 'function') {
-        try {
-            await adapterProvider.logout();
-            console.log('Cierre de sesión de Baileys exitoso.');
-        } catch (error) {
-            console.error('Error durante el logout de Baileys:', error);
-            // Continuar para resetear estado local de todas formas
-        }
-    } else if (botInstance && botInstance.ws && typeof botInstance.ws.end === 'function') {
-        botInstance.ws.end(new Error('Logout solicitado por el usuario')); // Para versiones más antiguas de Baileys
-        console.log('Logout forzado cerrando WebSocket.');
-    } else {
-        console.log('Función de logout no disponible en el proveedor o botInstance no conectado.');
+    console.log("BOT_HANDLER: Iniciando logout...");
+    isInitializing = false; // Detener cualquier inicialización en curso
+    if (initializationTimeoutId) clearTimeout(initializationTimeoutId);
+
+    if (sendIntervalId) {
+        clearInterval(sendIntervalId);
+        sendIntervalId = null;
     }
 
-    botState = 'pending'; // Estado inicial después de logout
+    if (adapterProvider) {
+        try {
+            if (typeof adapterProvider.logout === 'function') {
+                console.log("BOT_HANDLER: Llamando a adapterProvider.logout()...");
+                await adapterProvider.logout();
+                console.log('BOT_HANDLER: Logout de Baileys (vía provider.logout) exitoso.');
+            } else if (adapterProvider.ws && typeof adapterProvider.ws.end === 'function') {
+                console.log("BOT_HANDLER: adapterProvider.logout no encontrado, usando ws.end()...");
+                adapterProvider.ws.end(new Error('Logout solicitado por el usuario'));
+                console.log('BOT_HANDLER: Logout forzado cerrando WebSocket.');
+            } else {
+                 console.log('BOT_HANDLER: Función de logout no disponible en el proveedor actual.');
+            }
+        } catch (error) {
+            console.error('BOT_HANDLER: Error durante el logout de Baileys:', error);
+        }
+        adapterProvider = null;
+    }
+    
+    botInstance = null;
     qrCodeData = null;
     contactList = [];
     currentIndex = 0;
-    if (sendIntervalId) clearInterval(sendIntervalId);
-    sendIntervalId = null;
-    // Considerar si botInstance y adapterProvider deben ser nullificados y recreados en initializeBot
-    // Esto es importante para asegurar una sesión limpia.
-    // Por ahora, initializeBot los recrea.
+    botState = 'pending';
 
     progressUpdateCallback({ state: botState, qr: null, progress: 0, total: 0, sent: 0, error: "Sesión cerrada." });
-    console.log("Estado del bot reseteado después del logout.");
-    // Podrías querer forzar una reinicialización del bot aquí o dejar que el usuario lo haga.
-    // await initializeBot(progressUpdateCallback); // Opcional: re-inicializar automáticamente.
+    console.log("BOT_HANDLER: Estado del bot reseteado después del logout.");
 }
 
 function getBotStatus() {
     return {
         state: botState,
-        qr: qrCodeData, // Podría ser null si ya está conectado o no se ha generado
+        qr: qrCodeData,
         totalContacts: contactList.length,
         sentMessages: currentIndex,
-        progress: contactList.length > 0 ? (currentIndex / contactList.length) * 100 : 0
+        progress: contactList.length > 0 ? (currentIndex / contactList.length) * 100 : 0,
+        isInitializing: isInitializing // Informar si está en proceso
     };
 }
 
