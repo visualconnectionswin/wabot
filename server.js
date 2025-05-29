@@ -10,7 +10,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
-import QRCode from 'qrcode';
+// import QRCode from 'qrcode'; // QRCode no se usa directamente, Baileys genera el QR.
 import cron from 'node-cron';
 import winston from 'winston';
 import Joi from 'joi';
@@ -20,7 +20,7 @@ import dotenv from 'dotenv';
 
 // BuilderBot imports
 import { createBot, createProvider, createFlow } from '@builderbot/bot';
-import { BaileysProvider } from '@builderbot/provider-baileys'; // <--- MODIFICACIÓN AQUÍ
+import { BaileysProvider } from '@builderbot/provider-baileys';
 import { JsonFileDB } from '@builderbot/database-json';
 
 // Environment variables
@@ -33,8 +33,8 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const TIMEZONE = process.env.TIMEZONE || 'America/Lima';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const SESSIONS_DIR = './baileys_auth_info';
-const DB_PATH = './db.json';
+const SESSIONS_DIR = './baileys_auth_info'; // Directorio para la sesión de Baileys
+const DB_PATH = './db.json'; // Path para el archivo de la base de datos JSON
 const UPLOADS_DIR = './uploads';
 const LOGS_DIR = './logs';
 
@@ -73,7 +73,7 @@ await Promise.all([
   fs.mkdir(SESSIONS_DIR, { recursive: true }),
   fs.mkdir(UPLOADS_DIR, { recursive: true }),
   fs.mkdir(LOGS_DIR, { recursive: true }),
-  fs.mkdir('./public', { recursive: true })
+  fs.mkdir('./public', { recursive: true }) // Para el index.html
 ]);
 
 // Express app setup
@@ -144,29 +144,31 @@ const messageSchema = Joi.object({
 });
 
 // BuilderBot setup
-const flowWelcome = createFlow([]);
+const flowWelcome = createFlow([]); // Un flujo vacío es suficiente para esta aplicación
 
 const main = async () => {
   const database = new JsonFileDB({ filename: DB_PATH });
   logger.info(`Database adapter initialized with file: ${DB_PATH}`);
 
-  // BaileysProvider ya está importado correctamente con llaves arriba
-  const provider = createProvider(BaileysProvider, { // Esta línea ahora debería funcionar
+  const provider = createProvider(BaileysProvider, {
     name: 'whatsapp-bulk-sender',
     gifPlayback: false,
-    timeRelease: 10800000,
+    timeRelease: 10800000, // 3 hours
     usePairingCode: true,
     phoneNumber: process.env.PHONE_NUMBER || null
   });
 
   provider.on('require_action', ({ qr, code }) => {
-    if (qr) {
+    if (qr) { // Este evento puede no dispararse si usePairingCode=true y no hay sesión
         logger.info('QR Code received for authentication. Check bot.qr.png or /api/qr endpoint.');
+        // El archivo bot.qr.png lo genera Baileys internamente.
+        // La UI pedirá el QR a través de /api/qr o WebSocket.
     }
-    if (code) {
+    if (code) { // Este es más relevante con usePairingCode=true
         logger.info(`Pairing Code: ${code}. Please enter this code on your WhatsApp linked devices screen.`);
+        global.providerInstance.pairingCode = code; // Guardar para enviarlo por WebSocket si se solicita
         wss.clients.forEach(client => {
-            if (client.readyState === 1) { 
+            if (client.readyState === 1) {
                 client.send(JSON.stringify({ type: 'pairing_code', data: code }));
             }
         });
@@ -175,13 +177,14 @@ const main = async () => {
 
   provider.on('ready', () => {
     logger.info('WhatsApp Provider is ready!');
+    if (global.providerInstance) global.providerInstance.pairingCode = null; // Limpiar pairing code si ya está listo
     wss.clients.forEach(client => {
         if (client.readyState === 1) {
             client.send(JSON.stringify({
                 type: 'status_update',
                 data: {
                     connected: true,
-                    user: global.providerInstance?.vendor?.user || null
+                    user: global.providerInstance?.vendor?.user || null // Acceder al usuario del vendor
                 }
             }));
         }
@@ -190,6 +193,7 @@ const main = async () => {
 
   provider.on('auth_failure', (error) => {
     logger.error('WhatsApp Authentication Failure:', error);
+    if (global.providerInstance) global.providerInstance.pairingCode = null;
      wss.clients.forEach(client => {
         if (client.readyState === 1) {
             client.send(JSON.stringify({
@@ -205,19 +209,17 @@ const main = async () => {
   });
 
   const { bot, provider: botProvider } = await createBot({
-    flow: createFlow([flowWelcome]),
+    flow: flowWelcome, // Pasar el objeto de flujo directamente
     database,
     provider
   });
 
   global.botInstance = bot;
-  global.providerInstance = botProvider;
+  global.providerInstance = botProvider; // Esta es la instancia del proveedor ya configurada
 
   return { bot, provider: botProvider };
 };
 
-// BulkSendingManager Class
-// ... (BulkSendingManager class y sus métodos permanecen igual)
 class BulkSendingManager {
   constructor() {
     this.processes = new Map();
@@ -227,10 +229,10 @@ class BulkSendingManager {
   createProcess(id, data) {
     const process = {
       id,
-      status: 'pending', // pending, running, paused, completed, failed, stopped, scheduled
+      status: 'pending',
       currentIndex: 0,
       totalCount: data.contacts.length,
-      contacts: data.contacts,
+      contacts: data.contacts, // Guardar los contactos para este proceso
       messageTemplate: data.messageTemplate,
       delay: data.delay,
       mediaUrl: data.mediaUrl,
@@ -241,13 +243,12 @@ class BulkSendingManager {
       successCount: 0,
       failureCount: 0,
       errors: [],
-      timeout: null, // For inter-message delay or schedule timeout
+      timeout: null,
       lastActivity: Date.now()
     };
-
     this.processes.set(id, process);
     logger.info(`Created bulk sending process: ${id}`, { totalContacts: data.contacts.length, scheduled: !!data.scheduledTime });
-    this.broadcastUpdate(process); // Broadcast initial state
+    this.broadcastUpdate(process);
     return process;
   }
 
@@ -259,7 +260,7 @@ class BulkSendingManager {
     const process = this.processes.get(id);
     if (process) {
       Object.assign(process, updates, { lastActivity: Date.now() });
-      this.broadcastUpdate(process); // Broadcast updates
+      this.broadcastUpdate(process);
     }
     return process;
   }
@@ -276,18 +277,19 @@ class BulkSendingManager {
   async startProcess(id) {
     const process = this.getProcess(id);
     if (!process || process.status === 'running' || process.status === 'scheduled') {
-        logger.warn(`Process ${id} already running or scheduled, or not found.`);
+        logger.warn(`Process ${id} can't start: current status ${process?.status}.`);
         return false;
     }
 
     if (process.scheduledTime && new Date(process.scheduledTime) > new Date()) {
-      this.scheduleProcess(id); 
+      this.scheduleProcess(id);
       return true;
     }
 
     this.updateProcess(id, {
       status: 'running',
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      scheduledTime: null // Ya no está pendiente de programación
     });
 
     this.executeProcess(id).catch(err => {
@@ -300,8 +302,7 @@ class BulkSendingManager {
   async pauseProcess(id) {
     const process = this.getProcess(id);
     if (!process || process.status !== 'running') return false;
-
-    if (process.timeout) { 
+    if (process.timeout) {
       clearTimeout(process.timeout);
       process.timeout = null;
     }
@@ -313,10 +314,9 @@ class BulkSendingManager {
   async resumeProcess(id) {
     const process = this.getProcess(id);
     if (!process || process.status !== 'paused') return false;
-
     this.updateProcess(id, { status: 'running' });
     logger.info(`Resuming bulk sending process: ${id}`);
-    this.executeProcess(id).catch(err => { 
+    this.executeProcess(id).catch(err => {
         logger.error(`Unhandled error in executeProcess (resume) for ${id}:`, err);
         this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), `Critical error: ${err.message}`] });
     });
@@ -326,15 +326,13 @@ class BulkSendingManager {
   async stopProcess(id) {
     const process = this.getProcess(id);
     if (!process) return false;
-
     if (process.timeout) {
       clearTimeout(process.timeout);
       process.timeout = null;
     }
-    const finalStatus = process.status === 'scheduled' ? 'stopped' : (process.currentIndex > 0 ? 'stopped' : 'failed');
-
+    const finalStatus = (process.status === 'scheduled' || process.currentIndex === 0) ? 'stopped' : 'stopped'; // Considerar 'failed' si nunca envió nada
     this.updateProcess(id, {
-      status: finalStatus, 
+      status: finalStatus,
       completedAt: new Date().toISOString()
     });
     logger.info(`Stopped bulk sending process: ${id}`);
@@ -344,24 +342,20 @@ class BulkSendingManager {
   scheduleProcess(id) {
     const process = this.getProcess(id);
     if (!process || !process.scheduledTime) return;
-
     const delayMs = new Date(process.scheduledTime).getTime() - new Date().getTime();
 
     if (delayMs > 0) {
-      if (process.timeout) clearTimeout(process.timeout); 
-
+      if (process.timeout) clearTimeout(process.timeout);
       process.timeout = setTimeout(async () => {
-        logger.info(`Scheduled time reached for process ${id}. Starting...`);
-        this.updateProcess(id, { status: 'pending', scheduledTime: null }); 
-        await this.startProcess(id); 
+        logger.info(`Scheduled time reached for process ${id}. Attempting to start...`);
+        this.updateProcess(id, { status: 'pending' }); // No limpiar scheduledTime aquí, startProcess lo hará
+        await this.startProcess(id);
       }, delayMs);
-
       this.updateProcess(id, { status: 'scheduled' });
-      logger.info(`Scheduled process ${id} for ${process.scheduledTime}. Will start in ${delayMs / 1000}s.`);
+      logger.info(`Scheduled process ${id} for ${new Date(process.scheduledTime).toLocaleString()}. Will start in ${Math.round(delayMs / 1000)}s.`);
     } else {
       logger.info(`Scheduled time for process ${id} is in the past. Starting immediately.`);
-      this.updateProcess(id, { scheduledTime: null }); 
-      this.startProcess(id);
+      this.startProcess(id); // startProcess se encargará de limpiar scheduledTime
     }
   }
 
@@ -369,56 +363,61 @@ class BulkSendingManager {
     const process = this.getProcess(id);
     if (!process || process.status !== 'running' || !global.providerInstance || !global.providerInstance.vendor) {
         logger.warn(`Process ${id} cannot execute. Status: ${process?.status}, Provider ready: ${!!global.providerInstance?.vendor}`);
-        if(process && process.status === 'running') this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), 'Provider not ready or process status invalid'] });
+        if(process && process.status === 'running') this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), 'Provider not ready or process status invalid at execution start'] });
         return;
     }
 
     const { contacts, messageTemplate, delay, mediaUrl, mediaType } = process;
+    logger.info(`Executing process ${id}: ${process.currentIndex}/${process.totalCount}`);
 
     while (process.currentIndex < process.totalCount && process.status === 'running') {
       const contact = contacts[process.currentIndex];
-      const personalizedMessage = messageTemplate.replace(/{nombre}/g, contact.name || ''); 
+      const personalizedMessage = messageTemplate.replace(/{nombre}/g, contact.name || 'Cliente');
 
       let successfulSendsThisContact = 0;
       let errorsThisContact = [];
 
       for (const number of contact.numbers) {
-        if (process.status !== 'running') break; 
-
+        if (process.status !== 'running') {
+            logger.info(`Process ${id} status changed to ${process.status} during number iteration. Stopping.`);
+            return; // Salir si el estado del proceso cambió
+        }
         try {
-          await rateLimiter.consume(number).catch(rlError => { 
+          await rateLimiter.consume(number).catch(rlError => {
             logger.warn(`Rate limit exceeded for ${number} in process ${id}: ${rlError.message}`);
             errorsThisContact.push(`Rate limit exceeded for ${number}`);
-            throw rlError; 
+            throw rlError;
           });
 
           const formattedNumber = number.replace(/\+/g, '') + '@s.whatsapp.net';
-
           const [waCheckResult] = await global.providerInstance.vendor.onWhatsApp(number.replace(/\+/g, ''));
+
           if (!waCheckResult?.exists) {
             logger.warn(`Number ${number} (contact: ${contact.name}, row: ${contact.rowIndex}) not on WhatsApp. Process: ${id}`);
             errorsThisContact.push(`Number ${number} not on WhatsApp`);
-            continue; 
+            continue;
           }
 
           await global.providerInstance.vendor.sendPresenceUpdate('composing', formattedNumber);
-          await this.delay(500 + Math.random() * 500); 
+          await this.delay(500 + Math.random() * 500);
 
           let messagePayload = {};
-          const caption = personalizedMessage; 
+          const caption = personalizedMessage;
 
           if (mediaUrl && mediaType) {
             switch (mediaType) {
               case 'image': messagePayload = { image: { url: mediaUrl }, caption }; break;
               case 'video': messagePayload = { video: { url: mediaUrl }, caption }; break;
               case 'document': messagePayload = { document: { url: mediaUrl }, mimetype: this.getMimeType(mediaUrl), fileName: this.getFileName(mediaUrl), caption }; break;
-              case 'audio': messagePayload = { audio: { url: mediaUrl }, mimetype: 'audio/mpeg', ptt: false }; break; 
-              default: messagePayload = { text: personalizedMessage }; 
+              case 'audio': messagePayload = { audio: { url: mediaUrl }, mimetype: 'audio/mpeg', ptt: false }; break;
+              default: messagePayload = { text: personalizedMessage };
             }
-             if(mediaType !== 'audio' && !messagePayload.text && Object.keys(messagePayload).length === 0) { 
-                messagePayload.text = personalizedMessage; 
-             }
-
+            if(mediaType !== 'audio' && !messagePayload.text && Object.keys(messagePayload).some(k => ['image', 'video', 'document'].includes(k))) {
+                // Si hay media y no hay caption (porque personalizedMessage era solo para caption), y no es audio
+                // Esto ya está cubierto por `caption` arriba.
+            } else if (Object.keys(messagePayload).length === 0) { // Si por alguna razón mediaType es inválido y no hay payload
+                 messagePayload = { text: personalizedMessage };
+            }
           } else {
             messagePayload = { text: personalizedMessage };
           }
@@ -426,54 +425,67 @@ class BulkSendingManager {
           const sendResult = await global.providerInstance.vendor.sendMessage(formattedNumber, messagePayload);
           logger.info(`Message sent to ${number} (contact: ${contact.name}, row: ${contact.rowIndex}). ID: ${sendResult.key?.id}. Process: ${id}`);
           successfulSendsThisContact++;
-
           await global.providerInstance.vendor.sendPresenceUpdate('available', formattedNumber);
 
         } catch (error) {
-          logger.error(`Failed to send to ${number} (contact: ${contact.name}, row: ${contact.rowIndex}). Process: ${id}:`, error.message);
+          logger.error(`Failed to send to ${number} (contact: ${contact.name}, row: ${contact.rowIndex}). Process: ${id}:`, error.message.substring(0, 200)); // Loguear solo parte del mensaje de error
           errorsThisContact.push(`Failed for ${number}: ${error.message.substring(0, 100)}`);
         }
         if (contact.numbers.length > 1 && process.status === 'running') {
-             await this.delay(Math.max(500, delay / 5) + Math.random() * 300); 
+             await this.delay(Math.max(500, Math.floor(delay / (contact.numbers.length * 2))) + Math.random() * 200);
         }
-      } 
+      }
 
-      if (process.status !== 'running') break; 
+      if (process.status !== 'running') {
+          logger.info(`Process ${id} status changed to ${process.status} after contact processing. Stopping.`);
+          return; // Salir si el estado cambió
+      }
 
       if (successfulSendsThisContact > 0) {
         process.successCount++;
       } else {
         process.failureCount++;
-        process.errors.push(...errorsThisContact.map(e => `Row ${contact.rowIndex} (${contact.name}): ${e}`));
+        if(errorsThisContact.length > 0) { // Solo agregar si hubo errores específicos para este contacto
+            process.errors.push(...errorsThisContact.map(e => `Row ${contact.rowIndex} (${contact.name}): ${e}`));
+        } else if (successfulSendsThisContact === 0 && contact.numbers.length > 0) { // Si no hubo envíos exitosos pero había números
+            process.errors.push(`Row ${contact.rowIndex} (${contact.name}): No messages sent successfully.`);
+        }
       }
 
       process.currentIndex++;
-      this.updateProcess(id, { 
+      this.updateProcess(id, {
         currentIndex: process.currentIndex,
         successCount: process.successCount,
         failureCount: process.failureCount,
-        errors: process.errors
+        errors: process.errors // Actualizar con los errores acumulados
       });
 
       logger.info(`Process ${id} progress: ${process.currentIndex}/${process.totalCount}. Success: ${process.successCount}, Fail: ${process.failureCount}`);
 
       if (process.currentIndex < process.totalCount && process.status === 'running') {
-        const currentDelay = delay + (Math.random() * (delay * 0.2) - (delay * 0.1)); 
-        await new Promise(resolve => {
-          process.timeout = setTimeout(resolve, Math.max(1000, currentDelay)); 
-        });
-        process.timeout = null;
+        const currentDelay = delay + (Math.random() * (delay * 0.2) - (delay * 0.1));
+        process.timeout = setTimeout(() => {
+            if (process.status === 'running') { // Volver a verificar antes de continuar
+                 this.executeProcess(id).catch(err => { // Llamada recursiva para el siguiente contacto
+                    logger.error(`Unhandled error in executeProcess (recursion) for ${id}:`, err);
+                    this.updateProcess(id, { status: 'failed', errors: [...(process.errors || []), `Critical error: ${err.message}`] });
+                });
+            } else {
+                 logger.info(`Process ${id} no longer running during delay. Halting next step.`);
+            }
+        }, Math.max(1000, currentDelay));
+        return; // Salir de la iteración while, la recursión o el timeout se encargarán del siguiente
       }
-    } 
+    }
 
-    if (process.status === 'running') { 
+    if (process.status === 'running' && process.currentIndex >= process.totalCount) {
       this.updateProcess(id, {
         status: 'completed',
         completedAt: new Date().toISOString()
       });
       logger.info(`Bulk sending process ${id} completed. Total: ${process.totalCount}, Success: ${process.successCount}, Fail: ${process.failureCount}.`);
     } else {
-      logger.info(`Bulk sending process ${id} ended with status ${process.status}. Current index: ${process.currentIndex}`);
+      logger.info(`Bulk sending process ${id} ended with status ${process.status}. Current index: ${process.currentIndex} of ${process.totalCount}`);
     }
   }
 
@@ -484,14 +496,12 @@ class BulkSendingManager {
   getMimeType(filePathOrUrl) {
     const ext = path.extname(filePathOrUrl).toLowerCase();
     const mimeTypes = {
-        '.pdf': 'application/pdf',
-        '.doc': 'application/msword',
+        '.pdf': 'application/pdf', '.doc': 'application/msword',
         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        '.xls': 'application/vnd.ms-excel',
-        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        '.ppt': 'application/vnd.ms-powerpoint',
-        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        '.txt': 'text/plain',
+        '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.txt': 'text/plain', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif',
+        '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
     };
     return mimeTypes[ext] || 'application/octet-stream';
   }
@@ -499,90 +509,67 @@ class BulkSendingManager {
   getFileName(filePathOrUrl) {
     try {
         const url = new URL(filePathOrUrl);
-        return path.basename(url.pathname) || `document${path.extname(url.pathname) || '.dat'}`;
-    } catch (e) { 
+        let name = path.basename(decodeURIComponent(url.pathname));
+        if (!path.extname(name) && this.getMimeType(name) === 'application/octet-stream') { // Si no hay extensión, tratar de añadirla
+            const possibleExt = Object.keys(mimeTypes).find(key => mimeTypes[key] === this.getMimeType(filePathOrUrl));
+            if (possibleExt) name += possibleExt;
+        }
+        return name || `document${path.extname(url.pathname) || '.dat'}`;
+    } catch (e) {
         return path.basename(filePathOrUrl) || `document${path.extname(filePathOrUrl) || '.dat'}`;
     }
   }
 
   broadcastUpdate(processData) {
     const minimalProcessData = {
-        id: processData.id,
-        status: processData.status,
-        currentIndex: processData.currentIndex,
-        totalCount: processData.totalCount,
-        successCount: processData.successCount,
-        failureCount: processData.failureCount,
+        id: processData.id, status: processData.status,
+        currentIndex: processData.currentIndex, totalCount: processData.totalCount,
+        successCount: processData.successCount, failureCount: processData.failureCount,
         progress: processData.totalCount > 0 ? Math.round((processData.currentIndex / processData.totalCount) * 100) : 0,
-        startedAt: processData.startedAt,
-        completedAt: processData.completedAt,
+        startedAt: processData.startedAt, completedAt: processData.completedAt,
         scheduledTime: processData.scheduledTime,
     };
-
-    const update = {
-      type: 'process_update',
-      data: minimalProcessData
-    };
-
+    const update = { type: 'process_update', data: minimalProcessData };
     wss.clients.forEach(client => {
-      if (client.readyState === 1) { 
-        try {
-            client.send(JSON.stringify(update));
-        } catch (e) {
-            logger.error('Error broadcasting update to client:', e);
-        }
+      if (client.readyState === 1) {
+        try { client.send(JSON.stringify(update)); } catch (e) { logger.error('Error broadcasting update:', e); }
       }
     });
   }
 
   setupCleanupJob() {
-    cron.schedule('0 * * * *', () => {
+    cron.schedule('0 */2 * * *', () => { // Cada 2 horas
       const now = Date.now();
-      const maxAge = 24 * 60 * 60 * 1000; 
-      const runningMaxIdle = 6 * 60 * 60 * 1000; 
-
+      const maxAgeCompleted = 24 * 60 * 60 * 1000; // 24 horas
+      const maxAgeActiveIdle = 6 * 60 * 60 * 1000; // 6 horas
       logger.info('Running cleanup job for old processes...');
       let deletedCount = 0;
-
       for (const [id, process] of this.processes.entries()) {
         let shouldDelete = false;
         if (['completed', 'failed', 'stopped'].includes(process.status)) {
-          if (now - new Date(process.completedAt || process.lastActivity).getTime() > maxAge) {
+          if (now - new Date(process.completedAt || process.lastActivity).getTime() > maxAgeCompleted) {
             shouldDelete = true;
           }
         } else if (['running', 'paused', 'scheduled', 'pending'].includes(process.status)) {
-          if (now - process.lastActivity > runningMaxIdle) {
-            logger.warn(`Process ${id} with status ${process.status} has been idle for too long. Stopping and marking for deletion.`);
+          if (now - process.lastActivity > maxAgeActiveIdle) {
+            logger.warn(`Process ${id} (${process.status}) idle for too long. Stopping.`);
             if (process.timeout) clearTimeout(process.timeout);
             this.updateProcess(id, { status: 'failed', completedAt: new Date().toISOString(), errors: [...(process.errors || []), 'Process timed out due to inactivity'] });
+            // No se borra inmediatamente, se marcará para el siguiente ciclo de limpieza si es necesario.
           }
         }
-
         if (shouldDelete) {
           this.deleteProcess(id);
           deletedCount++;
         }
       }
-      if (deletedCount > 0) {
-        logger.info(`Cleanup job: Deleted ${deletedCount} old processes.`);
-      } else {
-        logger.info('Cleanup job: No old processes found to delete.');
-      }
+      if (deletedCount > 0) logger.info(`Cleanup: Deleted ${deletedCount} old processes.`);
+      else logger.info('Cleanup: No old processes to delete this cycle.');
     });
   }
 
   getProcessStats() {
-    const stats = {
-      total: this.processes.size,
-      pending: 0,
-      running: 0,
-      paused: 0,
-      completed: 0,
-      failed: 0,
-      scheduled: 0,
-      stopped: 0
-    };
-
+    const stats = { total: this.processes.size, pending: 0, running: 0, paused: 0, completed: 0, failed: 0, scheduled: 0, stopped: 0 };
     for (const process of this.processes.values()) {
       stats[process.status] = (stats[process.status] || 0) + 1;
     }
@@ -590,23 +577,15 @@ class BulkSendingManager {
   }
 
   getAllProcesses() {
-    return Array.from(this.processes.values()).map(p => ({ 
-        id: p.id,
-        status: p.status,
-        currentIndex: p.currentIndex,
-        totalCount: p.totalCount,
-        successCount: p.successCount,
-        failureCount: p.failureCount,
-        scheduledTime: p.scheduledTime,
-        startedAt: p.startedAt,
-        completedAt: p.completedAt,
+    return Array.from(this.processes.values()).map(p => ({
+        id: p.id, status: p.status, currentIndex: p.currentIndex, totalCount: p.totalCount,
+        successCount: p.successCount, failureCount: p.failureCount, scheduledTime: p.scheduledTime,
+        startedAt: p.startedAt, completedAt: p.completedAt,
         progress: p.totalCount > 0 ? Math.round((p.currentIndex / p.totalCount) * 100) : 0,
-        errorCount: p.errors?.length || 0,
-        lastActivity: p.lastActivity 
+        errorCount: p.errors?.length || 0, lastActivity: p.lastActivity
     })).sort((a,b) => (b.lastActivity || 0) - (a.lastActivity || 0));
   }
 }
-
 
 const bulkManager = new BulkSendingManager();
 
@@ -616,110 +595,83 @@ app.post('/api/upload-excel', upload.single('excel'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
     const workbook = XLSX.readFile(req.file.path);
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) {
-        await fs.unlink(req.file.path); 
+        await fs.unlink(req.file.path);
         return res.status(400).json({ error: 'Excel file contains no sheets.' });
     }
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
 
-
-    if (data.length < 2) { 
-      await fs.unlink(req.file.path); 
+    if (data.length < 2) {
+      await fs.unlink(req.file.path);
       return res.status(400).json({ error: 'Excel file must have a header and at least one data row' });
     }
 
-    const headers = data[0].map(h => String(h).trim().toLowerCase()); 
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
     const rows = data.slice(1);
+    const nameHeaderVariations = ['nombre', 'nombres', 'full name', 'name', 'cliente', 'contacto'];
+    const phoneHeaderVariationsBase = ['telefono', 'numero', 'celular', 'whatsapp', 'phone', 'móvil', 'movil'];
+    let nameColumnIndex = headers.findIndex(h => nameHeaderVariations.includes(h));
+    if (nameColumnIndex === -1) nameColumnIndex = 1; // Default B
 
-    const nameHeaderVariations = ['nombre', 'nombres', 'full name', 'name', 'cliente'];
-    const phoneHeaderVariationsBase = ['telefono', 'numero', 'celular', 'whatsapp', 'phone'];
-
-    let nameColumnIndex = 1; 
-    let numberColumnIndexes = [3, 4, 5]; 
-
-    const detectedNameCol = headers.findIndex(h => nameHeaderVariations.includes(h));
-    if (detectedNameCol !== -1) nameColumnIndex = detectedNameCol;
-    else logger.warn('Name column not auto-detected by header, using default B. Headers found:', headers);
-
-    const detectedNumberCols = [];
-    for (let i = 1; i <= 5; i++) { 
-        const variations = phoneHeaderVariationsBase.map(b => `${b}${i}`);
-        const colIndex = headers.findIndex(h => variations.includes(h) || phoneHeaderVariationsBase.includes(h) && detectedNumberCols.length === (i-1)); 
-        if (colIndex !== -1 && !detectedNumberCols.includes(colIndex)) {
-            detectedNumberCols.push(colIndex);
-        }
+    let numberColumnIndexes = [];
+    const potentialPhoneHeaders = headers.map((h, idx) => ({ header: h, index: idx }))
+                                   .filter(hObj => phoneHeaderVariationsBase.some(base => hObj.header.startsWith(base)));
+    if (potentialPhoneHeaders.length > 0) {
+        numberColumnIndexes = potentialPhoneHeaders.map(ph => ph.index);
+    } else {
+        numberColumnIndexes = [3, 4, 5]; // Default D, E, F
+        logger.warn('Phone columns not auto-detected well, using defaults D,E,F. Headers found:', headers);
     }
-    if (detectedNumberCols.length > 0) numberColumnIndexes = detectedNumberCols;
-    else logger.warn('Number columns not auto-detected, using defaults D,E,F. Headers found:', headers);
+    if (nameColumnIndex === -1 && numberColumnIndexes.length === 0) {
+        await fs.unlink(req.file.path);
+        return res.status(400).json({ error: "Could not identify 'name' or 'phone' columns. Please check headers."});
+    }
 
 
     const contacts = [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      if (row.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) continue; 
+      if (!row || row.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) continue;
 
       const fullName = row[nameColumnIndex] ? String(row[nameColumnIndex]).trim() : '';
-      const firstName = fullName.split(' ')[0] || `Contacto_Fila_${i+2}`; 
+      const firstName = fullName.split(' ')[0] || `Contacto_Fila_${i+2}`;
 
-      if (!firstName && numberColumnIndexes.every(idx => !row[idx] || String(row[idx]).trim() === '')) {
-          continue; 
-      }
+      if (!firstName && numberColumnIndexes.every(idx => !row[idx] || String(row[idx]).trim() === '')) continue;
 
-      const validNumbers = new Set(); 
-
+      const validNumbers = new Set();
       for (const colIndex of numberColumnIndexes) {
         if (row[colIndex] === undefined || row[colIndex] === null) continue;
-        const phoneNumber = String(row[colIndex]).trim().replace(/[^0-9+]/g, ''); 
-
-        const phoneRegex = /^(\+?51)?9\d{8}$/; 
-        const generalPhoneRegex = /^\+?\d{10,15}$/; 
-
+        const phoneNumber = String(row[colIndex]).trim().replace(/[^0-9+]/g, '');
+        const phoneRegex = /^(\+?51)?9\d{8}$/;
         if (phoneRegex.test(phoneNumber)) {
           let normalizedNumber = phoneNumber;
           if (!normalizedNumber.startsWith('+51')) {
             normalizedNumber = '+51' + normalizedNumber.replace(/^51/, '');
           }
-          if (normalizedNumber.match(/^\+519\d{8}$/)) { 
+          if (normalizedNumber.match(/^\+519\d{8}$/)) {
             validNumbers.add(normalizedNumber);
           }
-        } else if (generalPhoneRegex.test(phoneNumber)) {
         }
       }
-
       if (validNumbers.size > 0) {
-        contacts.push({
-          name: firstName,
-          numbers: Array.from(validNumbers),
-          rowIndex: i + 2 
-        });
+        contacts.push({ name: firstName, numbers: Array.from(validNumbers), rowIndex: i + 2 });
       }
     }
-
-    await fs.unlink(req.file.path); 
-
+    await fs.unlink(req.file.path);
     res.json({
       success: true,
       data: {
-        totalRowsInFile: data.length -1, 
-        processedRows: rows.length, 
-        validContacts: contacts.length,
-        contacts: contacts, 
-        summary: {
-          totalContactsFound: contacts.length,
-          totalNumbersFound: contacts.reduce((sum, c) => sum + c.numbers.length, 0)
-        }
+        totalRowsInFile: data.length -1, processedRows: rows.length, validContacts: contacts.length,
+        contacts: contacts,
+        summary: { totalContactsFound: contacts.length, totalNumbersFound: contacts.reduce((sum, c) => sum + c.numbers.length, 0)}
       }
     });
-
   } catch (error) {
     logger.error('Excel upload error:', error);
-    if (req.file && req.file.path) { 
-        try { await fs.unlink(req.file.path); } catch (e) { logger.warn('Could not delete temp upload file after error:', e);}
-    }
+    if (req.file?.path) { try { await fs.unlink(req.file.path); } catch (e) { /* ignore */ } }
     res.status(500).json({ error: `Failed to process Excel file: ${error.message}` });
   }
 });
@@ -727,334 +679,190 @@ app.post('/api/upload-excel', upload.single('excel'), async (req, res) => {
 app.post('/api/bulk-send', async (req, res) => {
   try {
     const { error, value } = messageSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ error: error.details.map(d => d.message).join(', ') });
-    }
-
-    if (!global.providerInstance?.vendor?.user) {
-      return res.status(400).json({ error: 'WhatsApp is not connected. Please scan QR or authenticate.' });
-    }
-    if (!value.contacts || value.contacts.length === 0) {
-        return res.status(400).json({ error: 'No contacts provided for bulk sending.' });
-    }
-
+    if (error) return res.status(400).json({ error: error.details.map(d => d.message).join(', ') });
+    if (!global.providerInstance?.vendor?.user) return res.status(400).json({ error: 'WhatsApp is not connected.' });
+    if (!value.contacts || value.contacts.length === 0) return res.status(400).json({ error: 'No contacts provided.' });
 
     const processId = `bulk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const processData = bulkManager.createProcess(processId, value); 
-
+    const processData = bulkManager.createProcess(processId, value);
     const startedOrScheduled = await bulkManager.startProcess(processId);
 
     if (startedOrScheduled) {
-      res.status(202).json({ 
-        success: true,
-        processId,
-        status: processData.status, 
-        message: processData.scheduledTime ? `Process ${processId} scheduled successfully for ${new Date(processData.scheduledTime).toLocaleString()}` : `Process ${processId} started successfully`
+      res.status(202).json({
+        success: true, processId, status: processData.status,
+        message: processData.scheduledTime ? `Process ${processId} scheduled for ${new Date(processData.scheduledTime).toLocaleString()}` : `Process ${processId} started`
       });
     } else {
-      bulkManager.deleteProcess(processId); 
-      res.status(409).json({ error: 'Failed to start or schedule process. It might be conflicting or in an invalid state.' });
+      bulkManager.deleteProcess(processId);
+      res.status(409).json({ error: 'Failed to start/schedule process.' });
     }
-
-  } catch (err) { 
+  } catch (err) {
     logger.error('Critical error in /api/bulk-send:', err);
-    res.status(500).json({ error: 'Internal server error during bulk send setup.' });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
 app.post('/api/process/:id/:action', async (req, res) => {
   const { id, action } = req.params;
   const process = bulkManager.getProcess(id);
-
-  if (!process) {
-    return res.status(404).json({ error: `Process ${id} not found.` });
-  }
-
+  if (!process) return res.status(404).json({ error: `Process ${id} not found.` });
   try {
-    let result = false;
-    let message = '';
-
+    let result = false; let message = '';
     switch (action) {
-      case 'pause':
-        result = await bulkManager.pauseProcess(id);
-        message = result ? `Process ${id} paused.` : `Failed to pause process ${id}.`;
-        break;
-      case 'resume':
-        result = await bulkManager.resumeProcess(id);
-        message = result ? `Process ${id} resumed.` : `Failed to resume process ${id}.`;
-        break;
-      case 'stop':
-        result = await bulkManager.stopProcess(id);
-        message = result ? `Process ${id} stopped.` : `Failed to stop process ${id}.`;
-        break;
-      default:
-        return res.status(400).json({ error: `Invalid action: ${action}` });
+      case 'pause': result = await bulkManager.pauseProcess(id); message = `Process ${id} ${result ? 'paused' : 'failed to pause'}.`; break;
+      case 'resume': result = await bulkManager.resumeProcess(id); message = `Process ${id} ${result ? 'resumed' : 'failed to resume'}.`; break;
+      case 'stop': result = await bulkManager.stopProcess(id); message = `Process ${id} ${result ? 'stopped' : 'failed to stop'}.`; break;
+      default: return res.status(400).json({ error: `Invalid action: ${action}` });
     }
-
-    if (result) {
-        res.json({ success: true, message, processStatus: bulkManager.getProcess(id)?.status });
-    } else {
-        res.status(400).json({ success: false, error: message, processStatus: bulkManager.getProcess(id)?.status });
-    }
+    res.json({ success: result, message, processStatus: bulkManager.getProcess(id)?.status });
   } catch (error) {
-    logger.error(`Process action '${action}' for ID '${id}' failed:`, error);
-    res.status(500).json({ error: `Internal server error while performing action '${action}' on process ${id}.` });
+    logger.error(`Process action '${action}' for '${id}' failed:`, error);
+    res.status(500).json({ error: `Server error on action '${action}' for process ${id}.` });
   }
 });
 
 app.get('/api/process/:id', (req, res) => {
   const process = bulkManager.getProcess(req.params.id);
-  if (!process) {
-    return res.status(404).json({ error: 'Process not found' });
-  }
-  const processSummary = {
-      id: process.id,
-      status: process.status,
-      currentIndex: process.currentIndex,
-      totalCount: process.totalCount,
-      successCount: process.successCount,
-      failureCount: process.failureCount,
-      scheduledTime: process.scheduledTime,
-      startedAt: process.startedAt,
-      completedAt: process.completedAt,
-      errors: process.errors.slice(-10) 
-  };
-  res.json({ success: true, data: processSummary });
+  if (!process) return res.status(404).json({ error: 'Process not found' });
+  const { contacts, ...summary } = process; // Excluir la lista de contactos
+  res.json({ success: true, data: { ...summary, errors: process.errors.slice(-10) }});
 });
 
 app.get('/api/processes', (req, res) => {
-  const processesList = bulkManager.getAllProcesses(); 
-  const stats = bulkManager.getProcessStats();
-  res.json({ success: true, data: { list: processesList, stats: stats } });
+  res.json({ success: true, data: { list: bulkManager.getAllProcesses(), stats: bulkManager.getProcessStats() } });
 });
-
 
 app.get('/api/qr', async (req, res) => {
   try {
-    if (global.providerInstance?.vendor?.user) { 
-      res.json({ success: true, authenticated: true, message: "Already authenticated." });
-    } else {
-      const qrPath = path.join(__dirname, 'bot.qr.png'); 
-      try {
-        await fs.access(qrPath); 
-        const qrBuffer = await fs.readFile(qrPath);
-        const qrDataUrl = `data:image/png;base64,${qrBuffer.toString('base64')}`;
-        res.json({ success: true, authenticated: false, qr: qrDataUrl });
-      } catch (fileError) {
-        if (global.providerInstance && typeof global.providerInstance.requestPairingCode === 'function' && global.providerInstance.usePairingCode) {
-             res.json({ success: true, authenticated: false, qr: null, pairingCodeExpected: true, message: "Pairing code might be active. Check server logs or UI." });
-        } else {
-            res.json({ success: true, authenticated: false, qr: null, message: "QR code not available yet. Waiting for generation..." });
-        }
-      }
+    if (global.providerInstance?.vendor?.user) {
+      return res.json({ success: true, authenticated: true, message: "Already authenticated." });
+    }
+    // Prioritize pairing code if active and available
+    if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
+        return res.json({ success: true, authenticated: false, qr: null, pairingCode: global.providerInstance.pairingCode, message: "Using pairing code." });
+    }
+    // Fallback to QR image
+    const qrPath = path.join(__dirname, 'bot.qr.png');
+    try {
+      const qrBuffer = await fs.readFile(qrPath);
+      res.json({ success: true, authenticated: false, qr: `data:image/png;base64,${qrBuffer.toString('base64')}` });
+    } catch (fileError) {
+      res.json({ success: true, authenticated: false, qr: null, pairingCodeExpected: !!global.providerInstance?.usePairingCode, message: "QR/Pairing code not available yet." });
     }
   } catch (error) {
     logger.error('QR endpoint error:', error);
-    res.status(500).json({ error: 'Internal server error while fetching QR status.' });
+    res.status(500).json({ error: 'Internal server error fetching QR status.' });
   }
 });
 
 app.get('/api/status', (req, res) => {
-  const uptimeInSeconds = process.uptime();
-  const uptimeFormatted = `${Math.floor(uptimeInSeconds / 3600)}h ${Math.floor((uptimeInSeconds % 3600) / 60)}m ${Math.floor(uptimeInSeconds % 60)}s`;
-
-  const memoryUsage = process.memoryUsage();
-  const memoryFormatted = {
-    rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
-    heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-    heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-    external: `${(memoryUsage.external / 1024 / 1024).toFixed(2)} MB`,
-  };
-
-  const status = {
+  const uptime = process.uptime();
+  const mem = process.memoryUsage();
+  res.json({ success: true, data: {
     whatsapp: {
       connected: !!global.providerInstance?.vendor?.user,
-      user: global.providerInstance?.vendor?.user ? {
-          id: global.providerInstance.vendor.user.id,
-          name: global.providerInstance.vendor.user.name || global.providerInstance.vendor.user.verifiedName
-      } : null,
-      providerStatus: global.providerInstance?.getStatus?.() || 'N/A' 
+      user: global.providerInstance?.vendor?.user ? { id: global.providerInstance.vendor.user.id, name: global.providerInstance.vendor.user.name } : null,
+      providerStatus: global.providerInstance?.getStatus?.() || 'N/A'
     },
     server: {
-      uptime: uptimeFormatted,
-      memory: memoryFormatted,
-      nodeVersion: process.version,
-      timezone: TIMEZONE,
-      port: PORT
+      uptime: `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${Math.floor(uptime%60)}s`,
+      memory: { rss: `${(mem.rss/1024/1024).toFixed(2)}MB`, heapUsed: `${(mem.heapUsed/1024/1024).toFixed(2)}MB` },
+      nodeVersion: process.version, timezone: TIMEZONE, port: PORT
     },
-    processesSummary: bulkManager.getProcessStats() 
-  };
-
-  res.json({ success: true, data: status });
+    processesSummary: bulkManager.getProcessStats()
+  }});
 });
 
 wss.on('connection', (wsClient) => {
   logger.info('New WebSocket client connected.');
-
-  try {
-      wsClient.send(JSON.stringify({
-          type: 'status_update', 
-          data: {
-              connected: !!global.providerInstance?.vendor?.user,
-              user: global.providerInstance?.vendor?.user || null
-          }
-      }));
-      // Send initial pairing code if available and not authenticated
-      if (!global.providerInstance?.vendor?.user && global.providerInstance?.pairingCode) {
-           wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode }));
-      }
-
-  } catch (e) { logger.error("Error sending initial status/pairing code to new WS client", e); }
-
+  const sendToClient = (payload) => {
+    if (wsClient.readyState === 1) {
+      try { wsClient.send(JSON.stringify(payload)); } catch (e) { logger.error("WS send error:", e); }
+    }
+  };
+  sendToClient({ type: 'status_update', data: { connected: !!global.providerInstance?.vendor?.user, user: global.providerInstance?.vendor?.user || null }});
+  if (!global.providerInstance?.vendor?.user && global.providerInstance?.pairingCode) {
+    sendToClient({ type: 'pairing_code', data: global.providerInstance.pairingCode });
+  }
 
   wsClient.on('message', async (message) => {
     try {
-      const data = JSON.parse(message.toString()); 
-      logger.debug('WebSocket message received:', data);
-
+      const data = JSON.parse(message.toString());
       switch (data.type) {
-        case 'get_status': 
-          wsClient.send(JSON.stringify({
-            type: 'status_update',
-            data: {
-              connected: !!global.providerInstance?.vendor?.user,
-              user: global.providerInstance?.vendor?.user || null
-            }
-          }));
+        case 'get_status':
+          sendToClient({ type: 'status_update', data: { connected: !!global.providerInstance?.vendor?.user, user: global.providerInstance?.vendor?.user || null }});
           if (!global.providerInstance?.vendor?.user && global.providerInstance?.pairingCode) {
-            wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode }));
+            sendToClient({ type: 'pairing_code', data: global.providerInstance.pairingCode });
           }
           break;
-
-        case 'request_qr': 
-          try {
-            const qrPath = path.join(__dirname, 'bot.qr.png');
-            // Check if provider is using pairing code primarily
-            if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
-                 wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode, message: "Using pairing code." }));
-            } else { // Fallback to QR
-                const qrBuffer = await fs.readFile(qrPath);
-                const qrDataUrl = `data:image/png;base64,${qrBuffer.toString('base64')}`;
-                wsClient.send(JSON.stringify({ type: 'qr_update', data: qrDataUrl }));
-            }
-          } catch { 
-            // If QR file not found or error, and no pairing code, send null QR.
-            if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
-                 wsClient.send(JSON.stringify({ type: 'pairing_code', data: global.providerInstance.pairingCode, message: "Using pairing code." }));
-            } else {
-                wsClient.send(JSON.stringify({ type: 'qr_update', data: null, message: "QR not available." }));
-            }
+        case 'request_qr': // This now implies request for QR or Pairing Code
+          if (global.providerInstance?.usePairingCode && global.providerInstance?.pairingCode) {
+            sendToClient({ type: 'pairing_code', data: global.providerInstance.pairingCode, message: "Using pairing code." });
+          } else {
+            try {
+              const qrPath = path.join(__dirname, 'bot.qr.png');
+              const qrBuffer = await fs.readFile(qrPath);
+              sendToClient({ type: 'qr_update', data: `data:image/png;base64,${qrBuffer.toString('base64')}` });
+            } catch { sendToClient({ type: 'qr_update', data: null, message: "QR not available." }); }
           }
           break;
       }
     } catch (error) {
-      logger.error('WebSocket message processing error:', error);
-      try {
-        wsClient.send(JSON.stringify({ type: 'error', message: 'Invalid message format or server error.' }));
-      } catch (e) { logger.error("Error sending error message to WS client", e); }
+      logger.error('WS message error:', error);
+      sendToClient({ type: 'error', message: 'Invalid message or server error.' });
     }
   });
-
-  wsClient.on('close', (code, reason) => {
-    logger.info(`WebSocket client disconnected. Code: ${code}, Reason: ${reason ? reason.toString() : 'N/A'}`);
-  });
-
-  wsClient.on('error', (error) => {
-    logger.error('WebSocket client error:', error);
-  });
+  wsClient.on('close', (code, reason) => logger.info(`WS client disconnected. Code: ${code}, Reason: ${reason?.toString()?.substring(0,100) || 'N/A'}`));
+  wsClient.on('error', (error) => logger.error('WS client error:', error));
 });
 
 app.use((error, req, res, next) => {
-  logger.error('Unhandled Express Error:', {
-    message: error.message,
-    stack: error.stack,
-    url: req.originalUrl,
-    method: req.method
-  });
-
+  logger.error('Unhandled Express Error:', { message: error.message, stack: error.stack.substring(0, 500), url: req.originalUrl });
   if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: `File too large. Max size is ${MAX_FILE_SIZE / 1024 / 1024}MB.` }); 
-    }
-    return res.status(400).json({ error: `File upload error: ${error.message}`});
+    return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: `Upload error: ${error.message}` });
   }
-
-  if (error.isJoi) { 
-    return res.status(400).json({ error: 'Validation error', details: error.details.map(d => d.message) });
-  }
-
-  res.status(error.status || 500).json({
-    error: process.env.NODE_ENV === 'development' ? error.message : 'Internal Server Error'
-  });
+  if (error.isJoi) return res.status(400).json({ error: 'Validation error', details: error.details.map(d => d.message) });
+  res.status(error.status || 500).json({ error: process.env.NODE_ENV === 'development' ? error.message : 'Internal Server Error' });
 });
 
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
-});
+app.use((req, res) => res.status(404).json({ error: 'Not Found', message: `Route ${req.originalUrl} not found.` }));
 
 const signals = { 'SIGINT': 2, 'SIGTERM': 15 };
 Object.keys(signals).forEach(signal => {
-    process.on(signal, async () => {
-        logger.info(`Received ${signal}, shutting down gracefully...`);
-
-        logger.info('Stopping active bulk processes...');
-        for (const [id, processItem] of bulkManager.processes) {
-            if (['running', 'paused', 'scheduled', 'pending'].includes(processItem.status)) {
-                if (processItem.timeout) clearTimeout(processItem.timeout);
-                bulkManager.updateProcess(id, { status: 'stopped', completedAt: new Date().toISOString() });
-                logger.info(`Process ${id} marked as stopped due to server shutdown.`);
-            }
-        }
-
-        wss.close(err => {
-            if (err) {
-                logger.error('Error closing WebSocket server:', err);
-            } else {
-                logger.info('WebSocket server closed.');
-            }
-
-            server.close(async (err_http) => {
-                if (err_http) {
-                    logger.error('Error closing HTTP server:', err_http);
-                } else {
-                    logger.info('HTTP server closed.');
-                }
-
-                if (global.providerInstance && global.providerInstance.vendor) {
-                    logger.info('Disconnecting WhatsApp (Baileys)...');
-                    try {
-                        await global.providerInstance.vendor.end(); 
-                        logger.info('WhatsApp (Baileys) disconnected.');
-                    } catch (e) {
-                        logger.error('Error disconnecting Baileys:', e);
-                    }
-                }
-                logger.info('Shutdown complete.');
-                process.exit(signals[signal]); 
-            });
-        });
-
-        setTimeout(() => {
-            logger.warn('Graceful shutdown timed out. Forcing exit.');
-            process.exit(1);
-        }, 10000); 
+  process.on(signal, async () => {
+    logger.info(`Received ${signal}, shutting down...`);
+    for (const [id, proc] of bulkManager.processes) {
+      if (['running', 'paused', 'scheduled', 'pending'].includes(proc.status)) {
+        if (proc.timeout) clearTimeout(proc.timeout);
+        bulkManager.updateProcess(id, { status: 'stopped', completedAt: new Date().toISOString() });
+        logger.info(`Process ${id} stopped for shutdown.`);
+      }
+    }
+    wss.close(() => logger.info('WebSocket server closed.'));
+    server.close(async () => {
+      logger.info('HTTP server closed.');
+      if (global.providerInstance?.vendor) {
+        try { await global.providerInstance.vendor.end(); logger.info('Baileys disconnected.'); }
+        catch (e) { logger.error('Error disconnecting Baileys:', e); }
+      }
+      logger.info('Shutdown complete.');
+      process.exit(signals[signal]);
     });
+    setTimeout(() => { logger.warn('Forcing exit after timeout.'); process.exit(1); }, 10000);
+  });
 });
 
 main().then(() => {
   server.listen(PORT, () => {
-    logger.info(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
-    logger.info(`📱 WhatsApp Bulk Sender (BuilderBot Edition) listo.`);
-    logger.info(`📊 Servidor WebSocket escuchando en ws://localhost:${PORT}`);
-    if(process.env.PHONE_NUMBER && global.providerInstance?.usePairingCode){ // Check both
-        logger.info(`📞 Pairing Code para el número: ${process.env.PHONE_NUMBER} (si se solicita y no hay sesión).`);
-    } else if (global.providerInstance?.usePairingCode) { 
-        logger.info('📱 Pairing Code se utilizará (si no hay sesión previa). Esperando el código en la consola/UI...');
-    } else {
-        logger.info('📱 Escanee el código QR (si no hay sesión previa). El archivo bot.qr.png se generará.');
-    }
+    logger.info(`🚀 Express server running on http://localhost:${PORT}`);
+    logger.info(`📱 WhatsApp Bulk Sender (BuilderBot) ready.`);
+    logger.info(`📊 WebSocket server on ws://localhost:${PORT}`);
+    const authMethod = global.providerInstance?.usePairingCode ?
+      (process.env.PHONE_NUMBER ? `Pairing Code for ${process.env.PHONE_NUMBER} (if requested/no session)` : 'Pairing Code (if no session, check console/UI)')
+      : 'QR Scan (if no session, bot.qr.png will be generated)';
+    logger.info(`🔑 Auth method: ${authMethod}`);
   });
 }).catch(error => {
-  logger.error('❌ Fallo al iniciar el servidor:', error);
+  logger.error('❌ Server failed to start:', error);
   process.exit(1);
 });
