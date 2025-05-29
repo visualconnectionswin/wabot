@@ -72,8 +72,7 @@ const logger = winston.createLogger({
 await Promise.all([
   fs.mkdir(SESSIONS_DIR, { recursive: true }),
   fs.mkdir(UPLOADS_DIR, { recursive: true }),
-  fs.mkdir(LOGS_DIR, { recursive: true }),
-  fs.mkdir('./public', { recursive: true }) // Para el index.html
+  fs.mkdir(LOGS_DIR, { recursive: true })
 ]);
 
 // Express app setup
@@ -104,7 +103,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Static files
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '')));
 
 // File upload configuration
 const storage = multer.diskStorage({
